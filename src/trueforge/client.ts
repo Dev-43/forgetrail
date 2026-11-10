@@ -59,8 +59,39 @@ export async function sendTurn(
   );
 }
 
+export interface ToolApprovalInput {
+  threadId: string;
+  toolCallId: string;
+  decision: 'allow' | 'deny';
+  reason?: string;
+}
+
 /**
- * Resumes turn with user.tool_approval input using camelCase threadId and toolCallId (spike Test 4).
+ * Resumes turn with one or more user.tool_approval inputs using camelCase threadId and toolCallId (C-16).
+ */
+export async function sendApprovals(
+  sessionId: string,
+  approvals: ToolApprovalInput[],
+  baseUrl = getTrueForgeUrl()
+): Promise<AsyncIterable<{ data: any }>> {
+  const inputs = approvals.map((a) => {
+    const approvalPayload: any = { status: a.decision };
+    if (a.decision === 'deny' && a.reason) {
+      approvalPayload.reason = a.reason;
+    }
+    return {
+      type: 'user.tool_approval',
+      threadId: a.threadId,
+      toolCallId: a.toolCallId,
+      approval: approvalPayload,
+    };
+  });
+
+  return createTurnStream(sessionId, inputs, baseUrl);
+}
+
+/**
+ * Resumes turn with a single user.tool_approval input.
  */
 export async function sendApproval(
   sessionId: string,
@@ -70,21 +101,9 @@ export async function sendApproval(
   reason?: string,
   baseUrl = getTrueForgeUrl()
 ): Promise<AsyncIterable<{ data: any }>> {
-  const approvalPayload: any = { status: decision };
-  if (decision === 'deny' && reason) {
-    approvalPayload.reason = reason;
-  }
-
-  return createTurnStream(
+  return sendApprovals(
     sessionId,
-    [
-      {
-        type: 'user.tool_approval',
-        threadId,
-        toolCallId,
-        approval: approvalPayload,
-      },
-    ],
+    [{ threadId, toolCallId, decision, reason }],
     baseUrl
   );
 }

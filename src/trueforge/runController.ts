@@ -17,7 +17,8 @@ import {
 import { AUTO_DENY_LIMIT_PER_FILE } from '../shared/limits';
 import { runContext } from '../mcp/runContext';
 import { validateWorkspacePath } from '../mcp/pathGuard';
-import { createSession, sendTurn, sendApproval, cancelSession, getTrueForgeUrl } from './client';
+import { isCommandAutoAllowed } from '../mcp/tools/runCommand';
+import { createSession, sendTurn, sendApprovals, ToolApprovalInput, cancelSession, getTrueForgeUrl } from './client';
 import { EventMapper } from './eventMapper';
 
 type EventListener = (event: AgentEvent) => void;
@@ -285,100 +286,145 @@ export async function executeRun(
       // If an approval is required, pause, resolve, and resume turn
       if (pendingApprovalEvent && !runContext.cancelled && finalStatus !== 'error') {
         currentState = 'awaiting_review';
-        const tcs = pendingApprovalEvent.toolCalls ?? pendingApprovalEvent.tool_calls;
+        const tcs = pendingApprovalEvent.toolCalls ?? pendingApprovalEvent.tool_calls ?? [];
         const threadId = pendingApprovalEvent.threadId ?? pendingApprovalEvent.thread_id ?? 'main';
-        const tc = tcs?.[0];
-        const callId = tc?.id;
-        const sourceEventId = tc?.sourceEventId ?? tc?.source_event_id;
+        const approvalsToSend: ToolApprovalInput[] = [];
 
-        const pending = mapper.getPendingCall(callId);
-        let args = pending?.args;
-        if (!args || Object.keys(args).length === 0) {
-          try {
-            const eventsRes = await fetch(`${getTrueForgeUrl()}/api/v1/sessions/${sessionCreatedId}/events`);
-            if (eventsRes.ok) {
-              const eventsJson: any = await eventsRes.json();
-              const sourceItem = eventsJson.data?.find((e: any) => e.event?.id === sourceEventId || e.id === sourceEventId);
-              const sourceEvent = sourceItem?.event ?? sourceItem;
-              const rawToolCall = sourceEvent?.tool_calls?.find((c: any) => c.id === callId) ?? sourceEvent?.toolCalls?.find((c: any) => c.id === callId) ?? sourceEvent?.tool_calls?.[0] ?? sourceEvent?.toolCalls?.[0];
-              const funcArgs = rawToolCall?.function?.arguments ?? rawToolCall?.args;
-              if (typeof funcArgs === 'string') {
-                args = JSON.parse(funcArgs);
-              } else if (funcArgs && typeof funcArgs === 'object') {
-                args = funcArgs;
+        // Fetch session events once if any call is missing arguments
+        let sessionEventsData: any[] | null = null;
+
+        for (let i = 0; i < tcs.length; i++) {
+          const tc = tcs[i];
+          const callId = tc?.id;
+          const sourceEventId = tc?.sourceEventId ?? tc?.source_event_id;
+
+          const pending = mapper.getPendingCall(callId);
+          let toolName = pending?.name ?? tc?.name ?? tc?.toolName ?? tc?.function?.name ?? 'propose_edit';
+          let args = pending?.args;
+
+          if (!args || Object.keys(args).length === 0) {
+            if (!sessionEventsData) {
+              try {
+                const eventsRes = await fetch(`${getTrueForgeUrl()}/api/v1/sessions/${sessionCreatedId}/events`);
+                if (eventsRes.ok) {
+                  const eventsJson: any = await eventsRes.json();
+                  sessionEventsData = eventsJson.data || [];
+                }
+              } catch (e) {
+                console.warn('Could not fetch session events:', e);
               }
             }
-          } catch (e) {
-            console.warn('Could not fetch sourceEvent from session events:', e);
-          }
-        }
-        if (!args || Object.keys(args).length === 0) {
-          const rawArgs = tc?.function?.arguments ?? tc?.args ?? tc?.arguments;
-          if (typeof rawArgs === 'string') {
-            try {
-              args = JSON.parse(rawArgs);
-            } catch {
-              args = {};
+
+            if (sessionEventsData) {
+              const sourceItem = sessionEventsData.find((e: any) => e.event?.id === sourceEventId || e.id === sourceEventId);
+              const sourceEvent = sourceItem?.event ?? sourceItem;
+              const rawToolCall = sourceEvent?.tool_calls?.find((c: any) => c.id === callId) ?? sourceEvent?.toolCalls?.find((c: any) => c.id === callId);
+              if (rawToolCall) {
+                toolName = rawToolCall.function?.name ?? rawToolCall.name ?? toolName;
+                const funcArgs = rawToolCall.function?.arguments ?? rawToolCall.args;
+                if (typeof funcArgs === 'string') {
+                  try { args = JSON.parse(funcArgs); } catch {}
+                } else if (funcArgs && typeof funcArgs === 'object') {
+                  args = funcArgs;
+                }
+              }
             }
-          } else if (rawArgs && typeof rawArgs === 'object') {
-            args = rawArgs;
+          }
+
+          if (!args) args = {};
+
+          // Check tool type: run_command vs propose_edit
+          if (toolName === 'run_command') {
+            const command = args.command ?? '';
+            if (isCommandAutoAllowed(command)) {
+              approvalsToSend.push({
+                threadId,
+                toolCallId: callId,
+                decision: 'allow',
+              });
+            } else {
+              // Ask user via modal (C-15)
+              let userChoice: string | undefined;
+              try {
+                const vscode = await import('vscode');
+                userChoice = await vscode.window.showInformationMessage(
+                  `Run command? ${command}`,
+                  { modal: true },
+                  'Run',
+                  'Deny'
+                );
+              } catch {
+                userChoice = 'Run';
+              }
+
+              if (userChoice === 'Run') {
+                approvalsToSend.push({
+                  threadId,
+                  toolCallId: callId,
+                  decision: 'allow',
+                });
+              } else {
+                approvalsToSend.push({
+                  threadId,
+                  toolCallId: callId,
+                  decision: 'deny',
+                  reason: D_USER('command denied by user'),
+                });
+              }
+            }
           } else {
-            args = {};
+            // propose_edit / propose_write
+            const reviewReq: ReviewRequest = {
+              id: callId,
+              runId,
+              threadId,
+              path: args.path ?? 'unknown',
+              kind: args.old_text || args.oldText ? 'replace' : 'create',
+              oldText: args.old_text ?? args.oldText ?? '',
+              newText: args.new_text ?? args.newText ?? args.new_content ?? '',
+              startLine: args.start_line ?? 1,
+              endLine: args.end_line ?? 1,
+              reason: args.reason ?? '(no reason given)',
+              sources: Array.isArray(args.sources) ? args.sources : [],
+              index: i + 1,
+              total: tcs.length,
+              baseVersion: args.baseVersion ?? 0,
+            };
+
+            const denialReason = validateProposal(reviewReq, request.workspaceRoot);
+            let decision: ReviewDecision;
+
+            if (denialReason) {
+              const denyCount = runContext.recordAutoDeny(reviewReq.path);
+              decision = { id: callId, decision: 'reject', feedback: denialReason };
+              if (denyCount >= AUTO_DENY_LIMIT_PER_FILE) {
+                finalStatus = 'error';
+                errorKind = 'tool';
+                finalMessage = `Auto-deny limit reached for ${reviewReq.path}`;
+                keepRunning = false;
+              }
+            } else if (activePresenter) {
+              emitEvent({ type: 'review.requested', request: reviewReq });
+              decision = await activePresenter.present(reviewReq);
+              emitEvent({ type: 'review.resolved', id: callId, decision: decision.decision });
+            } else {
+              decision = { id: callId, decision: 'accept' };
+            }
+
+            approvalsToSend.push({
+              threadId,
+              toolCallId: callId,
+              decision: decision.decision === 'accept' ? 'allow' : 'deny',
+              reason: decision.decision === 'reject' ? (decision.feedback ? D_USER(decision.feedback) : D_USER()) : undefined,
+            });
           }
-        }
-        const reviewReq: ReviewRequest = {
-          id: callId,
-          runId,
-          threadId,
-          path: args.path ?? 'unknown',
-          kind: args.old_text || args.oldText ? 'replace' : 'create',
-          oldText: args.old_text ?? args.oldText ?? '',
-          newText: args.new_text ?? args.newText ?? args.new_content ?? '',
-          startLine: args.start_line ?? 1,
-          endLine: args.end_line ?? 1,
-          reason: args.reason ?? '(no reason given)',
-          sources: Array.isArray(args.sources) ? args.sources : [],
-          index: 1,
-          total: tcs.length,
-          baseVersion: args.baseVersion ?? 0,
-        };
-
-        // Step 1: Pre-approval validation
-        const denialReason = validateProposal(reviewReq, request.workspaceRoot);
-        let decision: ReviewDecision;
-
-        if (denialReason) {
-          // Auto-deny
-          const denyCount = runContext.recordAutoDeny(reviewReq.path);
-          decision = { id: callId, decision: 'reject', feedback: denialReason };
-
-          if (denyCount >= AUTO_DENY_LIMIT_PER_FILE) {
-            finalStatus = 'error';
-            errorKind = 'tool';
-            finalMessage = `Auto-deny limit reached for ${reviewReq.path}`;
-            keepRunning = false;
-          }
-        } else if (activePresenter) {
-          // Show UI to user
-          emitEvent({ type: 'review.requested', request: reviewReq });
-          decision = await activePresenter.present(reviewReq);
-          emitEvent({ type: 'review.resolved', id: callId, decision: decision.decision });
-        } else {
-          // Auto-allow if no presenter
-          decision = { id: callId, decision: 'accept' };
         }
 
         currentState = 'running';
 
-        // Step 2: Resume TrueForge turn with allow or deny
-        if (!runContext.cancelled) {
-          stream = await sendApproval(
-            sessionCreatedId,
-            threadId,
-            callId,
-            decision.decision === 'accept' ? 'allow' : 'deny',
-            decision.decision === 'reject' ? D_USER(decision.feedback) : undefined
-          );
+        // Step 2: Resume TrueForge turn with all collected decisions
+        if (!runContext.cancelled && keepRunning) {
+          stream = await sendApprovals(sessionCreatedId, approvalsToSend);
         } else {
           keepRunning = false;
         }
