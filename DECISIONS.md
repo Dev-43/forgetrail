@@ -199,7 +199,14 @@ Entry format (copy this):
 - Rubric: Gate, A3 (10), B4 (10).
 - Call line: "The run controller isolates TrueForge sessions, streams events into our UI contract, and guards reviews with pre-approval validation."
 
-(Add D-034 onward below. Template above.)
+### D-034 Task C-4: propose_edit tool, atomic apply, undoStore snapshots, and undoLast/undoRun
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-4
+- Decision: Implemented `src/apply/applyEdit.ts` with `computeProposedText` (adhering to CRLF matching/normalization rules) and `applyHunk` (executing atomic WorkspaceEdit changes and immediate document save). Implemented `src/apply/undoStore.ts` storing snapshots (`fullTextBefore`, `fullTextAfter`, `hunkId`, `runId`), validating against external modifications before reverting, and registering commands `forgetrail.undoLast` and `forgetrail.undoRun`. Registered `propose_edit` and `run_command` on `/mcp-core`. All verified via `test/applyUndo.test.ts`.
+- Why: Satisfies rubric A1, B2 (diff safety and undo), and B4; guarantees cancel safety (zero writes on cancel) and atomic rollback.
+- Rubric: A1 (10), B2 (10), B4.
+- Call line: "Every edit is held at the approval gate, applied atomically with a snapshot, and completely reversible with undoLast or undoRun."
+
+(Add D-035 onward below. Template above.)
 
 ---
 
@@ -211,7 +218,7 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 |---|---|---|---|
 | MCP server and path guard | Devesh (Core) | CHECKED | Runs on `127.0.0.1:3333` via `@modelcontextprotocol/sdk` Streamable HTTP with endpoints `/mcp-core` and `/mcp-extra`. Resolves TrueForge's multi-turn transport collisions by maintaining a session map keyed on `mcp-session-id`. `pathGuard` normalizes paths and blocks anything outside workspace (`E_PATH_OUTSIDE`) or in ignored directories (`E_PATH_IGNORED`). `read_file` and `search_workspace` enforce line and match limits and prepend `[path | lines | ~tokens | budget left]` headers, deducting from the 12k token budget in `runContext`. Demo by calling `/health` or inspecting tool responses. |
 | TrueForge client and run controller | Devesh (Core) | CHECKED | Bridges TrueForge sessions using `@truefoundry/trueforge-sdk`. Spawns a unique session per run, streams turns, and maps raw events (`model.message.delta`, `tool.call`, `tool.response`, `turn.done`) into C8 events. Detects `tool.approval_required`, builds `ReviewRequest` from pending calls, runs pre-approval validation (rejecting bad formatting or ambiguous edits before UI), and resumes turn via camelCase `user.tool_approval`. Refuses concurrent runs. Demo via `executeRun` streaming. |
-| propose_edit, apply, snapshot, undo | Devesh (Core) | TO FILL | |
+| propose_edit, apply, snapshot, undo | Devesh (Core) | CHECKED | `propose_edit` is approval-gated and executes only after user approval. `applyHunk` checks the cancel guard, normalizes line endings (CRLF aware), records a snapshot in `undoStore`, applies changes atomically via `vscode.WorkspaceEdit`, and saves to disk. `undoLast` verifies file content matches `fullTextAfter` before restoring `fullTextBefore`, while `undoRun` rolls back the run in reverse order. Demo via `forgetrail.undoLast` or running `test/applyUndo.test.ts`. |
 | Retrieval: budget, outline, suggest_context | Devesh (Core) | TO FILL | |
 | @file and @symbol mentions | Devesh (Core) | TO FILL | |
 | Agent panel and context card | Devesh (Core) | TO FILL | |
@@ -254,6 +261,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 10:50 IST | Antigravity | Devesh | Task C-0 & A-1: Scaffold extension, install local TrueForge 0.184.2, configure launch/tasks, add env/models templates | `package.json`, `package-lock.json`, `tsconfig.json`, `src/extension.ts`, `.vscode/*`, `scripts/start-trueforge.mjs`, `.env.example`, `config/models.example.json`, `DECISIONS.md` | None |
 | 2026-11-10 18:35 IST | Antigravity | Devesh | Task C-2: Implement local MCP server, pathGuard, runContext, readFile, searchWorkspace tools, and unit tests | `src/mcp/*`, `src/context/ignore.ts`, `src/extension.ts`, `test/mcp.test.ts`, `package.json`, `package-lock.json`, `DECISIONS.md` | None |
 | 2026-11-10 18:45 IST | Antigravity | Devesh | Task C-3: Implement TrueForge client, EventMapper, RunController state machine, cancel guard, and unit tests | `src/trueforge/*`, `test/eventMapper.test.ts`, `DECISIONS.md` | None |
+| 2026-11-10 18:50 IST | Antigravity | Devesh | Task C-4: Implement propose_edit, run_command, atomic applyEdit, undoStore, undo commands, and tests | `src/apply/*`, `src/mcp/tools/proposeEdit.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `package.json`, `src/extension.ts`, `test/applyUndo.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
