@@ -3,9 +3,21 @@ import { startMcpServer, stopMcpServer } from './mcp/server';
 import { runContext } from './mcp/runContext';
 import { undoStore } from './apply/undoStore';
 import { setReviewPresenter } from './trueforge/runController';
-import { modalReviewPresenter } from './review/modalPresenter';
 import { executeInlineEdit } from './inline/inlineEdit';
 import { AgentPanel } from './panel/agentPanel';
+import {
+  EMPTY_SCHEME,
+  PROPOSED_SCHEME,
+  ProposedDocProvider,
+} from './review/ui/proposedDocProvider';
+import { ReviewController } from './review/ui/reviewController';
+import { StatusBarManager } from './ui/statusBar';
+import { registerMockReview } from './review/ui/mockReview';
+import { registerSelectionHighlight } from './ui/selectionHighlight';
+
+let proposedDocProvider: ProposedDocProvider | undefined;
+let reviewController: ReviewController | undefined;
+let statusBarManager: StatusBarManager | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
@@ -13,8 +25,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runContext.setWorkspaceRoot(folders[0].uri.fsPath);
   }
 
-  // Set default modal review presenter for M1 (swappable to native diff in M2)
-  setReviewPresenter(modalReviewPresenter);
+  // Initialize virtual document provider for proposed diff views
+  proposedDocProvider = new ProposedDocProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, proposedDocProvider),
+    vscode.workspace.registerTextDocumentContentProvider(EMPTY_SCHEME, proposedDocProvider)
+  );
+
+  // Initialize native diff ReviewController and wire as primary review presenter
+  reviewController = new ReviewController(proposedDocProvider);
+  setReviewPresenter(reviewController);
+  context.subscriptions.push({
+    dispose: () => reviewController?.destroy(),
+  });
+
+  // Initialize status bar manager
+  statusBarManager = new StatusBarManager();
+  context.subscriptions.push({
+    dispose: () => statusBarManager?.dispose(),
+  });
+
+  // Register mock review harness (U-2)
+  registerMockReview(context, reviewController);
+
+  // Register selection highlight on inline edit runs (U-3)
+  registerSelectionHighlight(context);
 
   // Start MCP server on fixed port 3333 per C1
   try {
@@ -67,5 +102,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export async function deactivate(): Promise<void> {
+  statusBarManager?.dispose();
+  reviewController?.destroy();
+  proposedDocProvider?.dispose();
   await stopMcpServer();
 }
