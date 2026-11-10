@@ -206,7 +206,14 @@ Entry format (copy this):
 - Rubric: A1 (10), B2 (10), B4.
 - Call line: "Every edit is held at the approval gate, applied atomically with a snapshot, and completely reversible with undoLast or undoRun."
 
-(Add D-035 onward below. Template above.)
+### D-035 Task C-5, C-6 & C-7: Modal presenter, inline edit command, and inline agent definitions
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-5, C-6, C-7
+- Decision: Implemented `src/review/modalPresenter.ts` and `src/review/reviewQueue.ts` presenting hunks with old/new text diffs and Accept/Reject actions. Implemented `src/inline/inlineEdit.ts` registering `forgetrail.inlineEdit`, capturing selected range, enforcing D_OUTSIDE_REGION via RunContext, and executing against `forgetrail-inline-primary`. Created agent definition JSON manifests in `agents/` (`inline.primary.json`, `inline.fallback.json`, `agent.primary.json`, `agent.fallback.json`) configuring preloaded/deferred connectors and approval gating for `propose_edit` and `run_command`.
+- Why: Provides complete M1 execution pipeline for inline edits and defines TrueForge agent manifests.
+- Rubric: A1 (10), Gate, B4.
+- Call line: "The inline edit command bounds edits to the user's selection, dispatches to the inline agent, and presents each hunk through the approval gate."
+
+(Add D-036 onward below. Template above.)
 
 ---
 
@@ -222,7 +229,7 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Retrieval: budget, outline, suggest_context | Devesh (Core) | TO FILL | |
 | @file and @symbol mentions | Devesh (Core) | TO FILL | |
 | Agent panel and context card | Devesh (Core) | TO FILL | |
-| Agent definitions and prompts | Devesh (Core) | TO FILL | |
+| Agent definitions and prompts | Devesh (Core) | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
 | Cancel guard | Devesh (Core) | CHECKED | `cancelRun()` synchronously sets `runContext.cancelled`, aborts the TrueForge session via `client.sessions.cancel()`, and disposes active review tabs without writing to disk. The cancellation flag is checked before every tool execution and disk apply. Workspace remains clean byte-for-byte. Demo by clicking cancel mid-stream and running `git status`. |
 | Fallback policy (classifyError, runWithFallback) | Pranav (API) | TO FILL | |
 | Setup, start and verify scripts | Pranav (API) | TO FILL | |

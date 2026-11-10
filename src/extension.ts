@@ -2,12 +2,18 @@ import * as vscode from 'vscode';
 import { startMcpServer, stopMcpServer } from './mcp/server';
 import { runContext } from './mcp/runContext';
 import { undoStore } from './apply/undoStore';
+import { setReviewPresenter } from './trueforge/runController';
+import { modalReviewPresenter } from './review/modalPresenter';
+import { executeInlineEdit } from './inline/inlineEdit';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   if (folders && folders.length > 0) {
     runContext.setWorkspaceRoot(folders[0].uri.fsPath);
   }
+
+  // Set default modal review presenter for M1 (swappable to native diff in M2)
+  setReviewPresenter(modalReviewPresenter);
 
   // Start MCP server on fixed port 3333 per C1
   try {
@@ -19,6 +25,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const helloCmd = vscode.commands.registerCommand('forgetrail.hello', () => {
     vscode.window.showInformationMessage('Hello from ForgeTrail!');
+  });
+
+  const inlineEditCmd = vscode.commands.registerCommand('forgetrail.inlineEdit', async () => {
+    await executeInlineEdit();
   });
 
   const undoLastCmd = vscode.commands.registerCommand('forgetrail.undoLast', async () => {
@@ -40,6 +50,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   context.subscriptions.push(helloCmd);
+  context.subscriptions.push(inlineEditCmd);
   context.subscriptions.push(undoLastCmd);
   context.subscriptions.push(undoRunCmd);
   context.subscriptions.push(
