@@ -192,7 +192,14 @@ Entry format (copy this):
 - Rubric: Gate, B4 (10).
 - Call line: "The extension runs a local MCP server on port 3333 that enforces path confinement and token budgets before returning any file contents to TrueForge."
 
-(Add D-033 onward below. Template above.)
+### D-033 Task C-3: TrueForge client, eventMapper, and runController
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-3
+- Decision: Implemented `src/trueforge/client.ts` wrapping `@truefoundry/trueforge-sdk` via dynamic ESM import to safely bridge the CommonJS extension host with TrueForge's ESM distribution. Implemented `EventMapper` transforming raw TrueForge stream events (`model.message.delta`, `tool.call`, `tool.response`, `tool.approval_required`, `turn.done`) to C8 `AgentEvent`s, and reconstructing `ReviewRequest` structures. Implemented `RunController` governing the C11 state machine (`idle`, `running`, `awaiting_review`, `finishing`, `cancelling`), pre-approval validation (`D_FORMAT`, `D_NOT_FOUND`, `D_AMBIGUOUS`, `D_OUTSIDE_REGION`), auto-denial limit enforcement (`AUTO_DENY_LIMIT_PER_FILE`), and immediate stream cancellation. Verified with `test/eventMapper.test.ts`.
+- Why: Gate, A3 (streaming + cancel), and B4 rubric requirements; provides a robust client and controller driving TrueForge turn cycles.
+- Rubric: Gate, A3 (10), B4 (10).
+- Call line: "The run controller isolates TrueForge sessions, streams events into our UI contract, and guards reviews with pre-approval validation."
+
+(Add D-034 onward below. Template above.)
 
 ---
 
@@ -203,13 +210,13 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Module | Owner | Status | Note (max 120 words: what / how / why / what breaks / how to demo) |
 |---|---|---|---|
 | MCP server and path guard | Devesh (Core) | CHECKED | Runs on `127.0.0.1:3333` via `@modelcontextprotocol/sdk` Streamable HTTP with endpoints `/mcp-core` and `/mcp-extra`. Resolves TrueForge's multi-turn transport collisions by maintaining a session map keyed on `mcp-session-id`. `pathGuard` normalizes paths and blocks anything outside workspace (`E_PATH_OUTSIDE`) or in ignored directories (`E_PATH_IGNORED`). `read_file` and `search_workspace` enforce line and match limits and prepend `[path | lines | ~tokens | budget left]` headers, deducting from the 12k token budget in `runContext`. Demo by calling `/health` or inspecting tool responses. |
-| TrueForge client and run controller | Devesh (Core) | TO FILL | |
+| TrueForge client and run controller | Devesh (Core) | CHECKED | Bridges TrueForge sessions using `@truefoundry/trueforge-sdk`. Spawns a unique session per run, streams turns, and maps raw events (`model.message.delta`, `tool.call`, `tool.response`, `turn.done`) into C8 events. Detects `tool.approval_required`, builds `ReviewRequest` from pending calls, runs pre-approval validation (rejecting bad formatting or ambiguous edits before UI), and resumes turn via camelCase `user.tool_approval`. Refuses concurrent runs. Demo via `executeRun` streaming. |
 | propose_edit, apply, snapshot, undo | Devesh (Core) | TO FILL | |
 | Retrieval: budget, outline, suggest_context | Devesh (Core) | TO FILL | |
 | @file and @symbol mentions | Devesh (Core) | TO FILL | |
 | Agent panel and context card | Devesh (Core) | TO FILL | |
 | Agent definitions and prompts | Devesh (Core) | TO FILL | |
-| Cancel guard | Devesh (Core) | TO FILL | |
+| Cancel guard | Devesh (Core) | CHECKED | `cancelRun()` synchronously sets `runContext.cancelled`, aborts the TrueForge session via `client.sessions.cancel()`, and disposes active review tabs without writing to disk. The cancellation flag is checked before every tool execution and disk apply. Workspace remains clean byte-for-byte. Demo by clicking cancel mid-stream and running `git status`. |
 | Fallback policy (classifyError, runWithFallback) | Pranav (API) | TO FILL | |
 | Setup, start and verify scripts | Pranav (API) | TO FILL | |
 | Model matrix and second provider | Pranav (API) | TO FILL | |
@@ -246,6 +253,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 10:25 IST | Antigravity | Devesh | Initial repository setup, team assignment, .gitignore creation, and git commit rules | `DECISIONS.md`, `BUILD.md`, `BUILD_api.md`, `BUILD_ui.md`, `SETUP.md`, `INTEGRATION.md`, `.gitignore` | None |
 | 2026-11-10 10:50 IST | Antigravity | Devesh | Task C-0 & A-1: Scaffold extension, install local TrueForge 0.184.2, configure launch/tasks, add env/models templates | `package.json`, `package-lock.json`, `tsconfig.json`, `src/extension.ts`, `.vscode/*`, `scripts/start-trueforge.mjs`, `.env.example`, `config/models.example.json`, `DECISIONS.md` | None |
 | 2026-11-10 18:35 IST | Antigravity | Devesh | Task C-2: Implement local MCP server, pathGuard, runContext, readFile, searchWorkspace tools, and unit tests | `src/mcp/*`, `src/context/ignore.ts`, `src/extension.ts`, `test/mcp.test.ts`, `package.json`, `package-lock.json`, `DECISIONS.md` | None |
+| 2026-11-10 18:45 IST | Antigravity | Devesh | Task C-3: Implement TrueForge client, EventMapper, RunController state machine, cancel guard, and unit tests | `src/trueforge/*`, `test/eventMapper.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
