@@ -78,6 +78,26 @@ export class EventMapper {
         break;
       }
 
+      case 'model.message': {
+        const toolCalls = raw.toolCalls ?? raw.tool_calls;
+        if (Array.isArray(toolCalls)) {
+          for (const tc of toolCalls) {
+            const id = tc.id ?? `call_${Date.now()}`;
+            const name = tc.function?.name ?? tc.toolInfo?.name ?? tc.name ?? 'unknown_tool';
+            let args: any = {};
+            try {
+              args = typeof tc.function?.arguments === 'string'
+                ? JSON.parse(tc.function.arguments)
+                : tc.function?.arguments ?? tc.args ?? {};
+            } catch {
+              args = tc.function?.arguments ?? tc.args ?? {};
+            }
+            this.recordPendingCall(id, name, args, threadId);
+          }
+        }
+        break;
+      }
+
       case 'tool.call': {
         const id = raw.id ?? raw.toolCallId ?? `call_${Date.now()}`;
         const name = raw.tool_name ?? raw.toolName ?? raw.function?.name ?? 'unknown_tool';

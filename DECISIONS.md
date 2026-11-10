@@ -213,7 +213,17 @@ Entry format (copy this):
 - Rubric: A1 (10), Gate, B4.
 - Call line: "The inline edit command bounds edits to the user's selection, dispatches to the inline agent, and presents each hunk through the approval gate."
 
-(Add D-036 onward below. Template above.)
+### D-036 Task C-8: Milestone M1 Acceptance Check (Task A ×3)
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-8
+- Decision: Executed Task A acceptance protocol three consecutive times on Flask 3.1.3 (`get_debug_flag` in `src/flask/helpers.py`). Fixed MCP multi-session reconnection in `src/mcp/server.ts` by honoring client-supplied `mcp-session-id`, resolved pending tool-call retrieval via `/api/v1/sessions/:id/events`, and normalized CRLF line endings in `validateProposal` to accurately compute 1-based startLine/endLine and enforce selection region bounds. Verified all 3 consecutive iterations passed:
+  - Iteration 1: 22.21s wall time, 0 retries. `verify:a` output `False` (PASS), `undoRun` reverted 1 hunk, `verify:c` clean (PASS).
+  - Iteration 2: 43.69s wall time, 0 retries. `verify:a` output `False` (PASS), `undoRun` reverted 1 hunk, `verify:c` clean (PASS).
+  - Iteration 3: 15.65s wall time, 0 retries. `verify:a` output `False` (PASS), `undoRun` reverted 1 hunk, `verify:c` clean (PASS).
+- Why: Satisfies Milestone M1 gate and rubric A1 (inline edit with human approval) and B2 (undo rollback byte-for-byte).
+- Rubric: A1 (10), Gate, B2 (10), B4.
+- Call line: "Task A succeeded three consecutive times with human approval gate, FLASK_DEBUG verification, and clean atomic undo."
+
+(Add D-037 onward below. Template above.)
 
 ---
 
