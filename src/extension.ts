@@ -5,6 +5,7 @@ import { undoStore } from './apply/undoStore';
 import { setReviewPresenter } from './trueforge/runController';
 import { modalReviewPresenter } from './review/modalPresenter';
 import { executeInlineEdit } from './inline/inlineEdit';
+import { AgentPanel } from './panel/agentPanel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
@@ -49,10 +50,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   });
 
+  const openPanelCmd = vscode.commands.registerCommand('forgetrail.openPanel', () => {
+    AgentPanel.createOrShow(context.extensionUri);
+  });
+
   context.subscriptions.push(helloCmd);
   context.subscriptions.push(inlineEditCmd);
   context.subscriptions.push(undoLastCmd);
   context.subscriptions.push(undoRunCmd);
+  context.subscriptions.push(openPanelCmd);
   context.subscriptions.push(
     new vscode.Disposable(() => {
       stopMcpServer().catch(console.error);

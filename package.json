@@ -31,6 +31,10 @@
       {
         "command": "forgetrail.undoRun",
         "title": "ForgeTrail: Undo Run"
+      },
+      {
+        "command": "forgetrail.openPanel",
+        "title": "ForgeTrail: Open Agent Panel"
       }
     ]
   },

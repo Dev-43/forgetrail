@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ForgeTrail Agent Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="panel-container">
+    <!-- Top Bar: Model Badge & State -->
+    <header class="panel-header">
+      <div class="header-left">
+        <span class="brand-title">ForgeTrail</span>
+        <span id="model-badge" class="badge">Model: Ready</span>
+        <span id="switch-notice" class="badge switch-badge hidden">Switched</span>
+      </div>
+      <div class="header-right">
+        <span id="state-badge" class="badge state-idle">IDLE</span>
+      </div>
+    </header>
+
+    <!-- Error Banner -->
+    <div id="error-banner" class="banner error-banner hidden">
+      <span id="error-message"></span>
+      <button id="error-dismiss" class="btn-icon">×</button>
+    </div>
+
+    <!-- Instruction Box -->
+    <section class="section instruction-section">
+      <label for="instruction-input">Task Instruction (supports <code>@file:&lt;path&gt;</code> and <code>@symbol:&lt;name&gt;</code>):</label>
+      <textarea id="instruction-input" rows="4" placeholder="Describe the task or paste an instruction..."></textarea>
+      <div class="action-buttons">
+        <button id="btn-run" class="btn btn-primary">Run</button>
+        <button id="btn-stop" class="btn btn-danger" disabled>Stop</button>
+        <button id="btn-undo-run" class="btn btn-secondary">Undo Run</button>
+      </div>
+    </section>
+
+    <!-- Budget Meter -->
+    <section class="section budget-section">
+      <div class="budget-header">
+        <span>Retrieval Token Budget</span>
+        <span id="budget-text">0 / 12,000 tokens</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="budget-progress" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+    </section>
+
+    <!-- Plan Card (C-18: shown only if agent emits PLAN: lines) -->
+    <section id="plan-card" class="section card-section hidden">
+      <div class="card-title">Execution Plan</div>
+      <ol id="plan-list" class="plan-list"></ol>
+    </section>
+
+    <!-- Context Chosen Card (C-18) -->
+    <section id="context-card" class="section card-section hidden">
+      <div class="card-title">Context Chosen</div>
+      <div id="context-list" class="context-list"></div>
+    </section>
+
+    <!-- Streaming Transcript -->
+    <section class="section transcript-section">
+      <div class="section-title">Agent Transcript</div>
+      <div id="transcript-box" class="transcript-box">
+        <span class="placeholder-text">Awaiting instruction...</span>
+      </div>
+    </section>
+
+    <!-- Tool Trail -->
+    <section class="section trail-section">
+      <div class="section-title">Tool Execution Trail</div>
+      <div id="tool-trail-list" class="tool-trail-list"></div>
+    </section>
+
+    <!-- Proposed Hunks / Changes -->
+    <section class="section hunks-section">
+      <div class="section-title">Proposed Changes (Hunks)</div>
+      <div id="hunk-list" class="hunk-list"></div>
+    </section>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -415,3 +415,13 @@ export async function executeRun(
     appliedCount,
   };
 }
+
+export const runController = {
+  executeRun,
+  cancelRun,
+  subscribe,
+  emitEvent,
+  getRunState,
+  getActiveRunId,
+  setReviewPresenter,
+};
