@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { startMcpServer, stopMcpServer } from './mcp/server';
 import { runContext } from './mcp/runContext';
+import { undoStore } from './apply/undoStore';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
@@ -20,7 +21,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.showInformationMessage('Hello from ForgeTrail!');
   });
 
+  const undoLastCmd = vscode.commands.registerCommand('forgetrail.undoLast', async () => {
+    const res = await undoStore.undoLast(runContext.workspaceRoot);
+    if (res.success) {
+      vscode.window.showInformationMessage(res.message);
+    } else {
+      vscode.window.showWarningMessage(res.message);
+    }
+  });
+
+  const undoRunCmd = vscode.commands.registerCommand('forgetrail.undoRun', async () => {
+    const res = await undoStore.undoRun(undefined, runContext.workspaceRoot);
+    if (res.success) {
+      vscode.window.showInformationMessage(res.message);
+    } else {
+      vscode.window.showWarningMessage(res.message);
+    }
+  });
+
   context.subscriptions.push(helloCmd);
+  context.subscriptions.push(undoLastCmd);
+  context.subscriptions.push(undoRunCmd);
   context.subscriptions.push(
     new vscode.Disposable(() => {
       stopMcpServer().catch(console.error);

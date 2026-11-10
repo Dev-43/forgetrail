@@ -19,6 +19,14 @@
       {
         "command": "forgetrail.hello",
         "title": "ForgeTrail: Hello"
+      },
+      {
+        "command": "forgetrail.undoLast",
+        "title": "ForgeTrail: Undo Last Edit"
+      },
+      {
+        "command": "forgetrail.undoRun",
+        "title": "ForgeTrail: Undo Run"
       }
     ]
   },

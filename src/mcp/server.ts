@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { runContext } from './runContext';
 import { executeReadFile } from './tools/readFile';
 import { executeSearchWorkspace } from './tools/searchWorkspace';
+import { executeProposeEdit } from './tools/proposeEdit';
+import { executeRunCommand } from './tools/runCommand';
 
 let httpServer: http.Server | null = null;
 const coreSessions = new Map<string, any>();
@@ -43,6 +45,38 @@ function registerCoreTools(server: any): void {
     },
     async (params: any) => {
       const text = await executeSearchWorkspace(params, runContext.workspaceRoot);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+  );
+
+  server.tool(
+    'propose_edit',
+    'Proposes an atomic edit to a file inside the workspace (one hunk; held at approval gate).',
+    {
+      path: z.string().describe('Relative path to the file inside workspace'),
+      old_text: z.string().describe('Exact original text to replace (empty if creating file)'),
+      new_text: z.string().describe('Proposed replacement text'),
+      reason: z.string().max(200).describe('One-line reason for this specific edit (<= 200 chars)'),
+      sources: z.array(z.string()).optional().describe('List of files informing this edit'),
+    },
+    async (params: any) => {
+      const text = await executeProposeEdit(params);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+  );
+
+  server.tool(
+    'run_command',
+    'Runs a terminal command in the workspace root with a 120s timeout limit.',
+    {
+      command: z.string().describe('Terminal command to execute in workspace root'),
+    },
+    async (params: any) => {
+      const text = await executeRunCommand(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
       };
