@@ -185,7 +185,14 @@ Entry format (copy this):
 - Rubric: A1 (10), B2 (10).
 - Call line: "The status bar and notifications keep the user aware of every run state, with one-click undo directly accessible from the notification."
 
-(Add D-032 onward below. Template above.)
+### D-032 Task C-2: MCP server with Streamable HTTP multi-session transport and pathGuard
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-2
+- Decision: Implemented local HTTP MCP server on `127.0.0.1:3333` serving `/mcp-core` and `/mcp-extra`. Managed session transports via `mcp-session-id` header map to handle multi-turn agent handshakes without "Server already initialized" errors. Pinned `@modelcontextprotocol/sdk` at version `1.32.2` (Streamable HTTP support). Implemented `pathGuard` (normalizing leading `./` and backslashes, blocking paths outside workspace root with `E_PATH_OUTSIDE`, and blocking ignored folders `.git`, `node_modules`, `__pycache__`, `.venv`, `build`, etc. with `E_PATH_IGNORED`). Implemented `read_file` (with `READ_MAX_LINES` truncation and binary detection) and `search_workspace` (regex search with `SEARCH_MAX_MATCHES` and `SEARCH_LINE_MAX_CHARS` limits), both returning canonical bracketed header lines and reporting token budget usage against `RUN_RETRIEVAL_MAX_TOKENS`. Verified via `test/mcp.test.ts`.
+- Why: Gate and B4 rubric requirement; TrueForge connects to editor tools via MCP over local Streamable HTTP.
+- Rubric: Gate, B4 (10).
+- Call line: "The extension runs a local MCP server on port 3333 that enforces path confinement and token budgets before returning any file contents to TrueForge."
+
+(Add D-033 onward below. Template above.)
 
 ---
 
@@ -195,7 +202,7 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 
 | Module | Owner | Status | Note (max 120 words: what / how / why / what breaks / how to demo) |
 |---|---|---|---|
-| MCP server and path guard | Devesh (Core) | TO FILL | |
+| MCP server and path guard | Devesh (Core) | CHECKED | Runs on `127.0.0.1:3333` via `@modelcontextprotocol/sdk` Streamable HTTP with endpoints `/mcp-core` and `/mcp-extra`. Resolves TrueForge's multi-turn transport collisions by maintaining a session map keyed on `mcp-session-id`. `pathGuard` normalizes paths and blocks anything outside workspace (`E_PATH_OUTSIDE`) or in ignored directories (`E_PATH_IGNORED`). `read_file` and `search_workspace` enforce line and match limits and prepend `[path | lines | ~tokens | budget left]` headers, deducting from the 12k token budget in `runContext`. Demo by calling `/health` or inspecting tool responses. |
 | TrueForge client and run controller | Devesh (Core) | TO FILL | |
 | propose_edit, apply, snapshot, undo | Devesh (Core) | TO FILL | |
 | Retrieval: budget, outline, suggest_context | Devesh (Core) | TO FILL | |
@@ -238,6 +245,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 |---|---|---|---|---|---|
 | 2026-11-10 10:25 IST | Antigravity | Devesh | Initial repository setup, team assignment, .gitignore creation, and git commit rules | `DECISIONS.md`, `BUILD.md`, `BUILD_api.md`, `BUILD_ui.md`, `SETUP.md`, `INTEGRATION.md`, `.gitignore` | None |
 | 2026-11-10 10:50 IST | Antigravity | Devesh | Task C-0 & A-1: Scaffold extension, install local TrueForge 0.184.2, configure launch/tasks, add env/models templates | `package.json`, `package-lock.json`, `tsconfig.json`, `src/extension.ts`, `.vscode/*`, `scripts/start-trueforge.mjs`, `.env.example`, `config/models.example.json`, `DECISIONS.md` | None |
+| 2026-11-10 18:35 IST | Antigravity | Devesh | Task C-2: Implement local MCP server, pathGuard, runContext, readFile, searchWorkspace tools, and unit tests | `src/mcp/*`, `src/context/ignore.ts`, `src/extension.ts`, `test/mcp.test.ts`, `package.json`, `package-lock.json`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
