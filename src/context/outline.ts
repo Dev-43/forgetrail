@@ -24,7 +24,7 @@ export interface FileOutline {
  * - def f(...)
  * - async def f(...)
  */
-function extractPythonSymbols(content: string): SymbolDefinition[] {
+export function extractPythonSymbols(content: string): SymbolDefinition[] {
   const symbols: SymbolDefinition[] = [];
   const lines = content.split(/\r?\n/);
 
@@ -64,7 +64,7 @@ function extractPythonSymbols(content: string): SymbolDefinition[] {
  * - class X(...)
  * - export const f =
  */
-function extractJsTsSymbols(content: string): SymbolDefinition[] {
+export function extractJsTsSymbols(content: string): SymbolDefinition[] {
   const symbols: SymbolDefinition[] = [];
   const lines = content.split(/\r?\n/);
 
@@ -111,7 +111,7 @@ function extractJsTsSymbols(content: string): SymbolDefinition[] {
   return symbols;
 }
 
-function walkWorkspace(dir: string, baseDir: string): string[] {
+export function walkWorkspace(dir: string, baseDir: string): string[] {
   let fileList: string[] = [];
   let entries: fs.Dirent[];
   try {

@@ -237,7 +237,14 @@ Entry format (copy this):
 - Rubric: B1 (10).
 - Call line: "repo_outline delivers a regex-extracted symbol outline bounded to 1500 tokens, accurately ranking core source files ahead of test suites."
 
-(Add D-039 onward below. Template above.)
+### D-039 Task C-11: suggest_context tool and task-relevance ranker
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-11
+- Decision: Implemented `src/mcp/tools/suggestContext.ts` scoring workspace files against task keywords using path matches (basename exact/partial), symbol definitions (from regex outline), and content hit frequencies. Differentiates source implementations, test suites, and documentation files with category weighting while filtering root changelog artifacts. Bounded to `SUGGEST_MAX_FILES` (8) with per-item reasons, token counts, and budget deduction. Wired into `forgetrail-extra` in `src/mcp/server.ts`. Added unit tests in `test/suggestContext.test.ts` verifying Task B instructions rank `src/flask/cli.py`, `tests/test_cli.py`, and `docs/cli.rst` in top results.
+- Why: Satisfies rubric B1 (relevant context retrieval) guiding autonomous agents to the exact files needing edits, tests, and documentation.
+- Rubric: B1 (10).
+- Call line: "suggest_context analyzes tasks and ranks top 8 workspace files with reasons and token sizes across implementation, tests, and docs."
+
+(Add D-040 onward below. Template above.)
 
 ---
 
@@ -250,7 +257,7 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | MCP server and path guard | Devesh (Core) | CHECKED | Runs on `127.0.0.1:3333` via `@modelcontextprotocol/sdk` Streamable HTTP with endpoints `/mcp-core` and `/mcp-extra`. Resolves TrueForge's multi-turn transport collisions by maintaining a session map keyed on `mcp-session-id`. `pathGuard` normalizes paths and blocks anything outside workspace (`E_PATH_OUTSIDE`) or in ignored directories (`E_PATH_IGNORED`). `read_file` and `search_workspace` enforce line and match limits and prepend `[path | lines | ~tokens | budget left]` headers, deducting from the 12k token budget in `runContext`. Demo by calling `/health` or inspecting tool responses. |
 | TrueForge client and run controller | Devesh (Core) | CHECKED | Bridges TrueForge sessions using `@truefoundry/trueforge-sdk`. Spawns a unique session per run, streams turns, and maps raw events (`model.message.delta`, `tool.call`, `tool.response`, `turn.done`) into C8 events. Detects `tool.approval_required`, builds `ReviewRequest` from pending calls, runs pre-approval validation (rejecting bad formatting or ambiguous edits before UI), and resumes turn via camelCase `user.tool_approval`. Refuses concurrent runs. Demo via `executeRun` streaming. |
 | propose_edit, apply, snapshot, undo | Devesh (Core) | CHECKED | `propose_edit` is approval-gated and executes only after user approval. `applyHunk` checks the cancel guard, normalizes line endings (CRLF aware), records a snapshot in `undoStore`, applies changes atomically via `vscode.WorkspaceEdit`, and saves to disk. `undoLast` verifies file content matches `fullTextAfter` before restoring `fullTextBefore`, while `undoRun` rolls back the run in reverse order. Demo via `forgetrail.undoLast` or running `test/applyUndo.test.ts`. |
-| Retrieval: budget, outline, suggest_context | Devesh (Core) | TO FILL | |
+| Retrieval: budget, outline, suggest_context | Devesh (Core) | CHECKED | Enforces `RUN_RETRIEVAL_MAX_TOKENS` (12k) across all reading and searching tools. `repo_outline` extracts class/function signatures with regex and scores by keyword hits (capped at 1,500 tokens). `suggest_context` ranks up to 8 candidate files with reasons, token estimates, and category bonuses (source, test, doc). Deduces usage per call and emits `budget.update` events for UI meters. Blocks calls with `E_BUDGET` when limit is hit. Demo via `test/budget.test.ts`, `test/outline.test.ts`, and `test/suggestContext.test.ts`. |
 | @file and @symbol mentions | Devesh (Core) | TO FILL | |
 | Agent panel and context card | Devesh (Core) | TO FILL | |
 | Agent definitions and prompts | Devesh (Core) | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
