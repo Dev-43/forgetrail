@@ -1,0 +1,19 @@
+{
+  "providers": [
+    {
+      "name": "google-gemini",
+      "type": "builtin",
+      "apiKeyEnv": "GEMINI_API_KEY"
+    },
+    {
+      "name": "secondary-provider",
+      "type": "openai-compatible",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiKeyEnv": "SECONDARY_API_KEY"
+    }
+  ],
+  "models": {
+    "primary": "google-gemini/gemini-3-1-flash-lite",
+    "fallback": "secondary-provider/llama-3.3-70b-versatile"
+  }
+}
