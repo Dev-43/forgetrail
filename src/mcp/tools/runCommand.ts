@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { exec } from 'child_process';
 import { COMMAND_OUTPUT_MAX_LINES, COMMAND_TIMEOUT_MS } from '../../shared/limits';
 import { E_CANCELLED, E_TIMEOUT } from '../../shared/contracts';
@@ -41,10 +43,18 @@ export async function executeRunCommand(
       resolve(E_TIMEOUT(COMMAND_TIMEOUT_MS));
     }, COMMAND_TIMEOUT_MS);
 
+    const venvScripts = path.join(workspaceRoot, '.venv', 'Scripts');
+    const venvBin = path.join(workspaceRoot, '.venv', 'bin');
+    const extraPath = fs.existsSync(venvScripts) ? venvScripts : (fs.existsSync(venvBin) ? venvBin : '');
+    const childEnv = extraPath
+      ? { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}` }
+      : process.env;
+
     const child = exec(
       params.command,
       {
         cwd: workspaceRoot,
+        env: childEnv,
         timeout: COMMAND_TIMEOUT_MS,
         maxBuffer: 10 * 1024 * 1024,
       },
