@@ -69,3 +69,4 @@ export class ProposedDocProvider implements vscode.TextDocumentContentProvider {
     this._onDidChange.dispose();
   }
 }
+

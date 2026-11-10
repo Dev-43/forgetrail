@@ -29,3 +29,4 @@ export function computeProposedText(currentText: string, request: ReviewRequest)
 
   return currentText.slice(0, index) + normalizedNew + currentText.slice(index + normalizedOld.length);
 }
+

@@ -134,3 +134,4 @@ describe('UI: U-4 Canonical Strings Exact Match', () => {
     assert.strictEqual(S_STALE_SKIP('app.py'), 'ForgeTrail: skipped a hunk because app.py changed.');
   });
 });
+

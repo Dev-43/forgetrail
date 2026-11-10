@@ -69,3 +69,4 @@ export function clearWhyDecorations(): void {
     whyDecorationType = undefined;
   }
 }
+
