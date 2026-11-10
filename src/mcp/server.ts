@@ -1,0 +1,210 @@
+import * as http from 'http';
+import { randomUUID } from 'crypto';
+// @ts-ignore
+const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+// @ts-ignore
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+import { z } from 'zod';
+import { runContext } from './runContext';
+import { executeReadFile } from './tools/readFile';
+import { executeSearchWorkspace } from './tools/searchWorkspace';
+
+let httpServer: http.Server | null = null;
+const coreSessions = new Map<string, any>();
+const extraSessions = new Map<string, any>();
+
+/**
+ * Registers Core MCP tools (read_file, search_workspace, and later propose_edit, run_command).
+ */
+function registerCoreTools(server: any): void {
+  server.tool(
+    'read_file',
+    'Reads a file inside the workspace (returns raw text of lines or up to READ_MAX_LINES).',
+    {
+      path: z.string().describe('Relative path to the file inside workspace'),
+      start_line: z.number().int().positive().optional().describe('1-based starting line number'),
+      end_line: z.number().int().positive().optional().describe('1-based ending line number (inclusive)'),
+    },
+    async (params: any) => {
+      const text = await executeReadFile(params, runContext.workspaceRoot);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+  );
+
+  server.tool(
+    'search_workspace',
+    'Searches for a regex query across non-ignored files in the workspace (returns up to 30 matches).',
+    {
+      query: z.string().describe('Regex search pattern'),
+      path_prefix: z.string().optional().describe('Optional subfolder prefix to restrict search to'),
+      case_sensitive: z.boolean().optional().describe('Whether the search is case-sensitive (default false)'),
+    },
+    async (params: any) => {
+      const text = await executeSearchWorkspace(params, runContext.workspaceRoot);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+  );
+}
+
+/**
+ * Registers Extra MCP tools (repo_outline, suggest_context).
+ */
+function registerExtraTools(server: any): void {
+  server.tool(
+    'repo_outline',
+    'Extracts definitions (class, def, function) with line numbers ranked by keyword score.',
+    {
+      query: z.string().describe('Keywords to score and rank files by'),
+      path_prefix: z.string().optional().describe('Optional subfolder path prefix'),
+    },
+    async (params: any) => {
+      // Stub for M2, returning header + placeholder
+      return {
+        content: [{ type: 'text', text: `[outline: ${params.query} | 0 symbols | ~0 tokens | budget left ${runContext.budgetMax - runContext.budgetUsed}]\nNo outline generated yet.` }],
+      };
+    }
+  );
+
+  server.tool(
+    'suggest_context',
+    'Suggests up to 8 relevant workspace files for a given task description with reasons.',
+    {
+      task: z.string().describe('Natural language description of the editing task'),
+    },
+    async (_params: any) => {
+      // Stub for M2
+      return {
+        content: [{ type: 'text', text: `[suggest_context | 0 files | ~0 tokens | budget left ${runContext.budgetMax - runContext.budgetUsed}]\nNo suggestions generated yet.` }],
+      };
+    }
+  );
+}
+
+/**
+ * Creates a new Streamable HTTP session transport for /mcp-core.
+ */
+async function createCoreSession(): Promise<{ transport: any; id: string }> {
+  const id = randomUUID();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => id,
+  });
+  const server = new McpServer({ name: 'forgetrail-core', version: '0.0.1' });
+  registerCoreTools(server);
+  await server.connect(transport);
+  coreSessions.set(id, transport);
+  return { transport, id };
+}
+
+/**
+ * Creates a new Streamable HTTP session transport for /mcp-extra.
+ */
+async function createExtraSession(): Promise<{ transport: any; id: string }> {
+  const id = randomUUID();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => id,
+  });
+  const server = new McpServer({ name: 'forgetrail-extra', version: '0.0.1' });
+  registerExtraTools(server);
+  await server.connect(transport);
+  extraSessions.set(id, transport);
+  return { transport, id };
+}
+
+/**
+ * Starts the local HTTP MCP server on 127.0.0.1:3333 with /mcp-core and /mcp-extra endpoints.
+ */
+export async function startMcpServer(port = 3333, host = '127.0.0.1'): Promise<http.Server> {
+  if (httpServer) {
+    return httpServer;
+  }
+
+  httpServer = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1:3333'}`);
+    const pathname = url.pathname;
+
+    // Health check endpoint
+    if (pathname === '/health' || pathname === '/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', activeRunId: runContext.activeRunId }));
+      return;
+    }
+
+    // Core endpoint: /mcp-core
+    if (pathname === '/mcp-core' || pathname.startsWith('/mcp-core/')) {
+      try {
+        const reqSessionId = req.headers['mcp-session-id'] as string | undefined;
+        if (reqSessionId && coreSessions.has(reqSessionId)) {
+          await coreSessions.get(reqSessionId)!.handleRequest(req, res);
+          return;
+        }
+
+        const { transport } = await createCoreSession();
+        await transport.handleRequest(req, res);
+      } catch (err: any) {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err?.message ?? 'Unknown MCP Core error' }));
+        }
+      }
+      return;
+    }
+
+    // Extras endpoint: /mcp-extra
+    if (pathname === '/mcp-extra' || pathname.startsWith('/mcp-extra/')) {
+      try {
+        const reqSessionId = req.headers['mcp-session-id'] as string | undefined;
+        if (reqSessionId && extraSessions.has(reqSessionId)) {
+          await extraSessions.get(reqSessionId)!.handleRequest(req, res);
+          return;
+        }
+
+        const { transport } = await createExtraSession();
+        await transport.handleRequest(req, res);
+      } catch (err: any) {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err?.message ?? 'Unknown MCP Extra error' }));
+        }
+      }
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `Not found: ${pathname}` }));
+  });
+
+  return new Promise((resolve, reject) => {
+    httpServer!.listen(port, host, () => {
+      resolve(httpServer!);
+    });
+    httpServer!.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Stops the MCP server and closes all active sessions.
+ */
+export async function stopMcpServer(): Promise<void> {
+  coreSessions.clear();
+  extraSessions.clear();
+
+  if (httpServer) {
+    return new Promise((resolve, reject) => {
+      httpServer!.close((err) => {
+        httpServer = null;
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+}
+
+export function getMcpServer(): http.Server | null {
+  return httpServer;
+}

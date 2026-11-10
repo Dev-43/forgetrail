@@ -29,7 +29,7 @@
     "trueforge": "node scripts/start-trueforge.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@truefoundry/trueforge-sdk": "0.184.1"
   },
   "devDependencies": {
