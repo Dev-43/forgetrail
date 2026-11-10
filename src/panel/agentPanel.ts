@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { runController } from '../trueforge/runController';
+import { runWithFallback } from '../fallback/runWithFallback';
 import { resolveMentions } from '../context/mentions';
 import { AgentEvent } from '../shared/contracts';
 
@@ -100,9 +101,9 @@ export class AgentPanel {
           }
         }
 
-        // Launch agent run
+        // Launch agent run with fallback routing (C-20)
         try {
-          await runController.executeRun('forgetrail-agent-primary', {
+          await runWithFallback({
             kind: 'agent',
             instruction: finalInstruction,
             workspaceRoot,
