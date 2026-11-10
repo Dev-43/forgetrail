@@ -272,7 +272,14 @@ Entry format (copy this):
 - Rubric: A1 (10), A2 (10).
 - Call line: "Multi-hunk review validates and presents edits in sequence, batching all decisions into a single resume turn."
 
-(Add D-044 onward below. Template above.)
+### D-044 Task C-17: Milestone M2 acceptance check on Flask 3.1.3
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-17
+- Decision: Completed Milestone M2 Task B acceptance verification on Flask 3.1.3 (`dev/forge-spike/flask`). Demonstrated autonomous agent execution: agent retrieves context using `suggest_context` and `repo_outline`, proposes multi-file edits across implementation (`src/flask/cli.py`), tests (`tests/test_cli.py`), and documentation (`docs/cli.rst`), and executes verification commands via `run_command`. Validated all 4 criteria: (1) touched >= 3 files, (2) `pytest tests/test_cli.py -q` passed (56 passed, 3 skipped), (3) `flask config` outputs JSON with sensitive keys masked as `***`, and (4) `flask --help` lists `config`. Verified `undoRun` restores the repository byte-for-byte clean (`npm run verify:c` passed). Documented rate-limit behavior (15 RPM / 250k TPM free tier constraints) and mitigated via 4500ms MCP tool throttling in `src/mcp/server.ts`.
+- Why: Satisfies Milestone M2 (Agent mode + context retrieval) rubric requirements A2 and B1.
+- Rubric: A2 (10), B1 (10).
+- Call line: "Milestone M2 verified on Flask 3.1.3: autonomous agent successfully added masked config CLI command, pytest coverage, and documentation with clean undo."
+
+(Add D-045 onward below. Template above.)
 
 ---
 
@@ -329,6 +336,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 18:45 IST | Antigravity | Devesh | Task C-3: Implement TrueForge client, EventMapper, RunController state machine, cancel guard, and unit tests | `src/trueforge/*`, `test/eventMapper.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 18:50 IST | Antigravity | Devesh | Task C-4: Implement propose_edit, run_command, atomic applyEdit, undoStore, undo commands, and tests | `src/apply/*`, `src/mcp/tools/proposeEdit.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `package.json`, `src/extension.ts`, `test/applyUndo.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
+| 2026-11-10 21:30 IST | Antigravity | Devesh | Tasks C-9 to C-18: Implement budget tracking, outline extraction, suggestContext, mentions, agent panel, multi-hunk review, and verify Task B on Flask 3.1.3 | `src/context/*`, `src/mcp/*`, `src/panel/*`, `src/trueforge/*`, `scripts/*`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
