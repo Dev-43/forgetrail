@@ -12,7 +12,10 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "onCommand:forgetrail.hello"
+    "onCommand:forgetrail.hello",
+    "onCommand:forgetrail.inlineEdit",
+    "onCommand:forgetrail.mockReview",
+    "onCommand:forgetrail.openPanel"
   ],
   "contributes": {
     "commands": [
@@ -23,6 +26,24 @@
       {
         "command": "forgetrail.inlineEdit",
         "title": "ForgeTrail: Inline Edit"
+      },
+      {
+        "command": "forgetrail.mockReview",
+        "title": "ForgeTrail: Mock Review"
+      },
+      {
+        "command": "forgetrail.review.accept",
+        "title": "ForgeTrail: Accept Hunk",
+        "icon": "$(check)"
+      },
+      {
+        "command": "forgetrail.review.reject",
+        "title": "ForgeTrail: Reject Hunk",
+        "icon": "$(x)"
+      },
+      {
+        "command": "forgetrail.review.show",
+        "title": "ForgeTrail: Show Review Diff"
       },
       {
         "command": "forgetrail.undoLast",
@@ -36,7 +57,48 @@
         "command": "forgetrail.openPanel",
         "title": "ForgeTrail: Open Agent Panel"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "forgetrail.inlineEdit",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "forgetrail.review.accept",
+        "key": "ctrl+alt+y",
+        "mac": "cmd+alt+y",
+        "when": "resourceScheme == forgetrail-proposed"
+      },
+      {
+        "command": "forgetrail.review.reject",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "resourceScheme == forgetrail-proposed"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "forgetrail.review.accept",
+          "when": "resourceScheme == forgetrail-proposed",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgetrail.review.reject",
+          "when": "resourceScheme == forgetrail-proposed",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "forgetrail.inlineEdit",
+          "when": "editorHasSelection",
+          "group": "1_modification"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -57,10 +119,11 @@
     "@truefoundry/trueforge-sdk": "0.184.1"
   },
   "devDependencies": {
-    "@truefoundry/trueforge": "0.184.2",
-    "@types/node": "^22.14.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.13.4",
     "@types/vscode": "^1.93.0",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3"
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "zod": "^3.24.2"
   }
 }
