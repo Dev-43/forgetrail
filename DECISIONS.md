@@ -164,7 +164,28 @@ Entry format (copy this):
 - Decision: Created `.env.example` documenting all C2 environment variables and `config/models.example.json` documenting the C3 schema for primary (`google-gemini/gemini-3-1-flash-lite`) and OpenAI-compatible fallback, with zero real API keys committed.
 - Rubric: A-1 acceptance, R6 (no secrets).
 
-(Add D-029 onward below. Template above.)
+### D-029 Task C-1: Freeze contracts in code and M0 stubs
+- Date 2026-11-10 · Author Core (Devesh) & UI (Vidyankshini) with Antigravity assistant · Task: C-1
+- Decision: Froze all limits in `src/shared/limits.ts` (C4) and shared review/event/run contracts in `src/shared/contracts.ts` (C6, C7, C8, C9, C11). Added initial M0 stubs in `src/apply/applyEdit.ts` (`computeProposedText`) and `src/trueforge/runController.ts` (`subscribe`).
+- Why: Integration dependency I-1 and I-2; UI and API feature builds require frozen contracts to compile and mock against.
+- Rubric: Gate, Eligibility.
+
+### D-030 Task U-1 & U-2: Native diff review architecture with proposedDocProvider and whyDecorations
+- Date 2026-11-10 · Author Vidyankshini (UI) with Antigravity assistant · Task: U-1, U-2
+- Decision: Implemented native diff review using `vscode.diff` between original file (or empty virtual doc for file creation) and `forgetrail-proposed://` virtual documents rendered via `ProposedDocProvider`. Inlined agent reason and sources via non-intrusive italic description decorations (`whyDecoration.ts`) using theme-adaptive colors. Enforced document version matching to detect staleness before accepting. Included standalone mock harness (`mockReview.ts`) presenting three sequential ReviewRequests for end-to-end testing without external backend dependencies.
+- Why: Satisfies rubric A1 (10 pts) and B2 (10 pts) by providing a clean, per-hunk diff review interface using VS Code native diff editors.
+- Alternatives rejected: Custom webview diff viewer (high maintenance, poor keyboard shortcuts, rubric explicitly favors native diffs).
+- Rubric: A1 (10), B2 (10).
+- Call line: "We render each proposed hunk inside VS Code's native diff editor with the agent's explanation shown directly on the right side."
+
+### D-031 Task U-3 & U-4: Status bar manager, notifications with undo actions, inline-edit entry points, and selection highlighting
+- Date 2026-11-10 · Author Vidyankshini (UI) with Antigravity assistant · Task: U-3, U-4, U-5
+- Decision: Added `StatusBarManager` listening to C8 agent events to show active model, running state, pending review counters, and model switch notices. Created notification helpers with direct "Undo last" and "Undo run" command triggers. Configured editor context menu and keybinding `ctrl+alt+e` (`cmd+alt+e`) for `forgetrail.inlineEdit`, plus keybindings `ctrl+alt+y` and `ctrl+alt+n` for diff accept/reject. Implemented `registerSelectionHighlight` to visually highlight user selection during active inline runs.
+- Why: Provides clear user transparency on agent status and safety recovery (undo) per rubric B2 and A1.
+- Rubric: A1 (10), B2 (10).
+- Call line: "The status bar and notifications keep the user aware of every run state, with one-click undo directly accessible from the notification."
+
+(Add D-032 onward below. Template above.)
 
 ---
 
@@ -185,8 +206,8 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Fallback policy (classifyError, runWithFallback) | Pranav (API) | TO FILL | |
 | Setup, start and verify scripts | Pranav (API) | TO FILL | |
 | Model matrix and second provider | Pranav (API) | TO FILL | |
-| Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | TO FILL | |
-| Status bar and notifications | Vidyankshini (UI) | TO FILL | |
+| Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | CHECKED | Serves virtual docs (`forgetrail-proposed://`) via `ProposedDocProvider`. `ReviewController.present` opens `vscode.diff` against the original file, reveals the hunk range, and renders the agent's rationale using an italic `whyDecoration`. Users accept via title-bar buttons or `ctrl+alt+y` (checks `document.version` against `baseVersion` to block stale edits) or reject with optional feedback. Disposing a run closes matching diff tabs and clears decorations. Demo with `ForgeTrail: Mock Review`. |
+| Status bar and notifications | Vidyankshini (UI) | CHECKED | `StatusBarManager` subscribes to C8 `AgentEvent` streams, updating a status bar item with active model, pending reviews (`S_REVIEW`, clickable to show diff), model switch notices (`S_SWITCHED`), and cancellation/error statuses. `notifications.ts` implements canonical strings from BUILD_ui.md U-4, providing `showAppliedNotification` with interactive "Undo last" and "Undo run" buttons. Disposes and cleans up cleanly on run cancellation. |
 
 ---
 
@@ -217,6 +238,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 |---|---|---|---|---|---|
 | 2026-11-10 10:25 IST | Antigravity | Devesh | Initial repository setup, team assignment, .gitignore creation, and git commit rules | `DECISIONS.md`, `BUILD.md`, `BUILD_api.md`, `BUILD_ui.md`, `SETUP.md`, `INTEGRATION.md`, `.gitignore` | None |
 | 2026-11-10 10:50 IST | Antigravity | Devesh | Task C-0 & A-1: Scaffold extension, install local TrueForge 0.184.2, configure launch/tasks, add env/models templates | `package.json`, `package-lock.json`, `tsconfig.json`, `src/extension.ts`, `.vscode/*`, `scripts/start-trueforge.mjs`, `.env.example`, `config/models.example.json`, `DECISIONS.md` | None |
+| 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
