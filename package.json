@@ -113,6 +113,8 @@
     "verify:c": "tsx scripts/verify.ts c",
     "test:task-a": "tsx scripts/test-task-a.ts",
     "test:task-b": "tsx scripts/test-task-b.ts",
+    "test:task-c": "tsx scripts/test-task-c.ts",
+    "test:cancel": "tsx scripts/test-cancel.ts",
     "check": "tsx scripts/check-submission.ts"
   },
   "dependencies": {
