@@ -11,6 +11,7 @@ import { executeSearchWorkspace } from './tools/searchWorkspace';
 import { executeProposeEdit } from './tools/proposeEdit';
 import { executeRunCommand } from './tools/runCommand';
 import { executeRepoOutline } from './tools/repoOutline';
+import { executeSuggestContext } from './tools/suggestContext';
 
 let httpServer: http.Server | null = null;
 const coreSessions = new Map<string, any>();
@@ -110,10 +111,10 @@ function registerExtraTools(server: any): void {
     {
       task: z.string().describe('Natural language description of the editing task'),
     },
-    async (_params: any) => {
-      // Stub for M2
+    async (params: any) => {
+      const text = await executeSuggestContext(params, runContext.workspaceRoot);
       return {
-        content: [{ type: 'text', text: `[suggest_context | 0 files | ~0 tokens | budget left ${runContext.budgetMax - runContext.budgetUsed}]\nNo suggestions generated yet.` }],
+        content: [{ type: 'text', text }],
       };
     }
   );
