@@ -258,7 +258,21 @@ Entry format (copy this):
 - Rubric: A2 (10), A3 (10), B1 (10).
 - Call line: "The Agent Panel streams real-time deltas and tool events, exposes an always-active Stop button, and displays the Context Chosen and Plan cards before the first hunk is proposed."
 
-(Add D-042 onward below. Template above.)
+### D-042 Task C-15: run_command execution, timeout, and allowlist auto-approval
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-15
+- Decision: Tool `run_command` in `src/mcp/tools/runCommand.ts` executes commands in the workspace root with a 120s timeout limit (`COMMAND_TIMEOUT_MS`), output tailing to `COMMAND_OUTPUT_MAX_LINES` (200 lines), and cancel guard checks. In `src/trueforge/runController.ts`, approval requests for `run_command` check `isCommandAutoAllowed(command)`: test and status commands (`pytest`, `python -m pytest`, `git status`, `git diff`) auto-allow without user interruption; other commands prompt via modal with Run/Deny options, returning `D_USER` on rejection.
+- Why: Satisfies rubric A2 (agent autonomy with command execution safety).
+- Rubric: A2 (10).
+- Call line: "run_command executes safely with process timeout, automatically approving pytest/git commands and prompting for arbitrary shell runs."
+
+### D-043 Task C-16: Multi-hunk review queue and unified approval batching
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-16
+- Decision: In `src/trueforge/runController.ts`, multi-tool approval events (`tool.approval_required` with `toolCalls.length >= 1`) are presented sequentially in order (`index / total`). Each proposal is validated against the current disk state (accounting for earlier applied hunks in the same queue). All decisions are collected into `ToolApprovalInput[]` and sent in a single `sendApprovals` resume turn stream via `user.tool_approval`.
+- Why: Satisfies rubric A1 & A2 (multi-hunk review and multi-file editing safety without state corruption).
+- Rubric: A1 (10), A2 (10).
+- Call line: "Multi-hunk review validates and presents edits in sequence, batching all decisions into a single resume turn."
+
+(Add D-044 onward below. Template above.)
 
 ---
 
