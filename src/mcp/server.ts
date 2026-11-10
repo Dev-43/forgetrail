@@ -10,6 +10,7 @@ import { executeReadFile } from './tools/readFile';
 import { executeSearchWorkspace } from './tools/searchWorkspace';
 import { executeProposeEdit } from './tools/proposeEdit';
 import { executeRunCommand } from './tools/runCommand';
+import { executeRepoOutline } from './tools/repoOutline';
 
 let httpServer: http.Server | null = null;
 const coreSessions = new Map<string, any>();
@@ -96,9 +97,9 @@ function registerExtraTools(server: any): void {
       path_prefix: z.string().optional().describe('Optional subfolder path prefix'),
     },
     async (params: any) => {
-      // Stub for M2, returning header + placeholder
+      const text = await executeRepoOutline(params, runContext.workspaceRoot);
       return {
-        content: [{ type: 'text', text: `[outline: ${params.query} | 0 symbols | ~0 tokens | budget left ${runContext.budgetMax - runContext.budgetUsed}]\nNo outline generated yet.` }],
+        content: [{ type: 'text', text }],
       };
     }
   );
