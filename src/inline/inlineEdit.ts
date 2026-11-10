@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { RunRequest } from '../shared/contracts';
 import { runContext } from '../mcp/runContext';
-import { executeRun } from '../trueforge/runController';
+import { runWithFallback } from '../fallback/runWithFallback';
 
 function getVscode(): any {
   try {
@@ -68,7 +68,7 @@ export async function executeInlineEdit(): Promise<void> {
     },
   };
 
-  const result = await executeRun('forgetrail-inline-primary', request);
+  const result = await runWithFallback(request);
 
   if (result.status === 'done') {
     const action = await vscode.window.showInformationMessage(
