@@ -112,3 +112,59 @@ test('eventMapper: maps turn.done done, cancelled, and error', () => {
     assert.match(errorEvents[0].message, /401/);
   }
 });
+
+test('eventMapper: parses CONTEXT and PLAN lines and emits context.report', () => {
+  const mapper = new EventMapper('test-run-6');
+  const delta = {
+    type: 'model.message.delta',
+    content:
+      'I will inspect the workspace.\nCONTEXT: src/flask/cli.py — Implements core CLI commands\nPLAN: 1. Add config command to cli.py\nPLAN: 2. Add tests in test_cli.py\n',
+  };
+
+  const events = mapper.mapEvent(delta);
+  const reportEvent = events.find((e) => e.type === 'context.report');
+  assert.ok(reportEvent, 'Emitted context.report event');
+  if (reportEvent && reportEvent.type === 'context.report') {
+    assert.equal(reportEvent.items.length, 1);
+    assert.equal(reportEvent.items[0].path, 'src/flask/cli.py');
+    assert.equal(reportEvent.items[0].reason, 'Implements core CLI commands');
+  }
+
+  const plans = mapper.getPlanSteps();
+  assert.equal(plans.length, 2);
+  assert.equal(plans[0], '1. Add config command to cli.py');
+  assert.equal(plans[1], '2. Add tests in test_cli.py');
+});
+
+test('eventMapper: falls back to read_file calls before propose_edit if CONTEXT omitted', () => {
+  const mapper = new EventMapper('test-run-7');
+  // Record read_file tool call
+  mapper.recordPendingCall('call_read_1', 'read_file', { path: 'src/flask/config.py' });
+  mapper.mapEvent({
+    type: 'tool.response',
+    tool_name: 'read_file',
+    toolCallId: 'call_read_1',
+    content: '[src/flask/config.py | 100 lines | ~400 tokens | budget left 11600]',
+  });
+
+  // Now propose_edit occurs without any CONTEXT lines
+  mapper.recordPendingCall('call_edit_1', 'propose_edit', {
+    path: 'src/flask/cli.py',
+    old_text: 'pass',
+    new_text: 'print("hello")',
+    reason: 'Add feature',
+  });
+
+  const approvalEvents = mapper.mapEvent({
+    type: 'tool.approval_required',
+    toolCalls: [{ id: 'call_edit_1' }],
+  });
+
+  const reportEvent = approvalEvents.find((e) => e.type === 'context.report');
+  assert.ok(reportEvent, 'Fallback emitted context.report');
+  if (reportEvent && reportEvent.type === 'context.report') {
+    assert.equal(reportEvent.items.length, 1);
+    assert.equal(reportEvent.items[0].path, 'src/flask/config.py');
+    assert.equal(reportEvent.items[0].reason, 'read by agent');
+  }
+});
