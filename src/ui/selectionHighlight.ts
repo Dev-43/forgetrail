@@ -60,3 +60,4 @@ function clearHighlight(): void {
   activeEditor = undefined;
   activeDecorationRange = undefined;
 }
+

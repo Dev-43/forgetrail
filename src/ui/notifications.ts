@@ -57,3 +57,4 @@ export function showSelectCodeNotification(): void {
 export function showBusyNotification(): void {
   vscode.window.showWarningMessage(S_BUSY);
 }
+

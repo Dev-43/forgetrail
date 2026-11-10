@@ -109,3 +109,4 @@ export function registerMockReview(context: vscode.ExtensionContext, presenter: 
 
   context.subscriptions.push(disposable);
 }
+
