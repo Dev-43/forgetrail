@@ -121,8 +121,8 @@ function registerExtraTools(server: any): void {
 /**
  * Creates a new Streamable HTTP session transport for /mcp-core.
  */
-async function createCoreSession(): Promise<{ transport: any; id: string }> {
-  const id = randomUUID();
+async function createCoreSession(requestedId?: string): Promise<{ transport: any; id: string }> {
+  const id = requestedId || randomUUID();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => id,
   });
@@ -136,8 +136,8 @@ async function createCoreSession(): Promise<{ transport: any; id: string }> {
 /**
  * Creates a new Streamable HTTP session transport for /mcp-extra.
  */
-async function createExtraSession(): Promise<{ transport: any; id: string }> {
-  const id = randomUUID();
+async function createExtraSession(requestedId?: string): Promise<{ transport: any; id: string }> {
+  const id = requestedId || randomUUID();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => id,
   });
@@ -176,7 +176,7 @@ export async function startMcpServer(port = 3333, host = '127.0.0.1'): Promise<h
           return;
         }
 
-        const { transport } = await createCoreSession();
+        const { transport } = await createCoreSession(reqSessionId);
         await transport.handleRequest(req, res);
       } catch (err: any) {
         if (!res.headersSent) {
@@ -196,7 +196,7 @@ export async function startMcpServer(port = 3333, host = '127.0.0.1'): Promise<h
           return;
         }
 
-        const { transport } = await createExtraSession();
+        const { transport } = await createExtraSession(reqSessionId);
         await transport.handleRequest(req, res);
       } catch (err: any) {
         if (!res.headersSent) {
@@ -229,6 +229,11 @@ export async function stopMcpServer(): Promise<void> {
   extraSessions.clear();
 
   if (httpServer) {
+    try {
+      if (typeof httpServer.closeAllConnections === 'function') {
+        httpServer.closeAllConnections();
+      }
+    } catch {}
     return new Promise((resolve, reject) => {
       httpServer!.close((err) => {
         httpServer = null;

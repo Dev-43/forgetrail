@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import {
@@ -18,7 +17,7 @@ import {
 import { AUTO_DENY_LIMIT_PER_FILE } from '../shared/limits';
 import { runContext } from '../mcp/runContext';
 import { validateWorkspacePath } from '../mcp/pathGuard';
-import { createSession, sendTurn, sendApproval, cancelSession } from './client';
+import { createSession, sendTurn, sendApproval, cancelSession, getTrueForgeUrl } from './client';
 import { EventMapper } from './eventMapper';
 
 type EventListener = (event: AgentEvent) => void;
@@ -44,11 +43,13 @@ export function setReviewPresenter(presenter: ReviewPresenter): void {
 /**
  * Subscribes to C8 AgentEvents emitted during runs.
  */
-export function subscribe(listener: EventListener): vscode.Disposable {
+export function subscribe(listener: EventListener): { dispose(): void } {
   listeners.add(listener);
-  return new vscode.Disposable(() => {
-    listeners.delete(listener);
-  });
+  return {
+    dispose: () => {
+      listeners.delete(listener);
+    },
+  };
 }
 
 /**
@@ -86,13 +87,25 @@ function validateProposal(request: ReviewRequest, workspaceRoot: string): string
     }
 
     const currentDiskText = fs.readFileSync(absPath, 'utf-8');
-    const occurrences = currentDiskText.split(request.oldText).length - 1;
+    const isCrlf = currentDiskText.includes('\r\n');
+    const normalizedOld = isCrlf
+      ? request.oldText.replace(/\r?\n/g, '\r\n')
+      : request.oldText.replace(/\r\n/g, '\n');
+
+    const occurrences = currentDiskText.split(normalizedOld).length - 1;
     if (occurrences === 0) {
       return D_NOT_FOUND(request.path);
     }
     if (occurrences > 1) {
       return D_AMBIGUOUS(occurrences, request.path);
     }
+
+    // Compute exact startLine and endLine from matched oldText per C7
+    const matchIndex = currentDiskText.indexOf(normalizedOld);
+    const linesBefore = currentDiskText.slice(0, matchIndex).split(/\r?\n/);
+    const matchedLines = normalizedOld.split(/\r?\n/);
+    request.startLine = linesBefore.length;
+    request.endLine = request.startLine + matchedLines.length - 1;
 
     // Inline selection region check
     if (runContext.selectionRegion && runContext.selectionRegion.path === request.path) {
@@ -103,6 +116,9 @@ function validateProposal(request: ReviewRequest, workspaceRoot: string): string
         return D_OUTSIDE_REGION(runContext.selectionRegion.startLine, runContext.selectionRegion.endLine);
       }
     }
+  } else {
+    request.startLine = 1;
+    request.endLine = request.newText.split('\n').length;
   }
 
   return null;
@@ -234,9 +250,14 @@ export async function executeRun(
 
       let pendingApprovalEvent: any = null;
 
-      for await (const { data: rawEvent } of stream) {
+      for await (const chunk of stream) {
         if (runContext.cancelled) {
           break;
+        }
+
+        const rawEvent = (chunk as any)?.data ?? chunk;
+        if (!rawEvent || !rawEvent.type) {
+          continue;
         }
 
         const agentEvents = mapper.mapEvent(rawEvent);
@@ -253,7 +274,7 @@ export async function executeRun(
           if (status === 'error') {
             finalStatus = 'error';
             errorKind = 'model';
-            finalMessage = rawEvent.state?.error?.message ?? '[Model Error] Turn execution failed';
+            finalMessage = rawEvent.state?.error?.message ?? rawEvent.state?.message ?? '[Model Error] Turn execution failed';
           } else if (status === 'cancelled') {
             finalStatus = 'cancelled';
             finalMessage = 'Turn cancelled';
@@ -268,9 +289,43 @@ export async function executeRun(
         const threadId = pendingApprovalEvent.threadId ?? pendingApprovalEvent.thread_id ?? 'main';
         const tc = tcs?.[0];
         const callId = tc?.id;
+        const sourceEventId = tc?.sourceEventId ?? tc?.source_event_id;
 
         const pending = mapper.getPendingCall(callId);
-        const args = pending?.args ?? {};
+        let args = pending?.args;
+        if (!args || Object.keys(args).length === 0) {
+          try {
+            const eventsRes = await fetch(`${getTrueForgeUrl()}/api/v1/sessions/${sessionCreatedId}/events`);
+            if (eventsRes.ok) {
+              const eventsJson: any = await eventsRes.json();
+              const sourceItem = eventsJson.data?.find((e: any) => e.event?.id === sourceEventId || e.id === sourceEventId);
+              const sourceEvent = sourceItem?.event ?? sourceItem;
+              const rawToolCall = sourceEvent?.tool_calls?.find((c: any) => c.id === callId) ?? sourceEvent?.toolCalls?.find((c: any) => c.id === callId) ?? sourceEvent?.tool_calls?.[0] ?? sourceEvent?.toolCalls?.[0];
+              const funcArgs = rawToolCall?.function?.arguments ?? rawToolCall?.args;
+              if (typeof funcArgs === 'string') {
+                args = JSON.parse(funcArgs);
+              } else if (funcArgs && typeof funcArgs === 'object') {
+                args = funcArgs;
+              }
+            }
+          } catch (e) {
+            console.warn('Could not fetch sourceEvent from session events:', e);
+          }
+        }
+        if (!args || Object.keys(args).length === 0) {
+          const rawArgs = tc?.function?.arguments ?? tc?.args ?? tc?.arguments;
+          if (typeof rawArgs === 'string') {
+            try {
+              args = JSON.parse(rawArgs);
+            } catch {
+              args = {};
+            }
+          } else if (rawArgs && typeof rawArgs === 'object') {
+            args = rawArgs;
+          } else {
+            args = {};
+          }
+        }
         const reviewReq: ReviewRequest = {
           id: callId,
           runId,

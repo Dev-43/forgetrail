@@ -3,25 +3,16 @@
  * Handles session creation, turn streaming, approvals, and cancellation.
  */
 
-let cachedClient: any = null;
-
 export function getTrueForgeUrl(): string {
   return process.env.TRUEFORGE_URL ?? 'http://localhost:8790';
 }
 
-/**
- * Returns an instance of the TrueForge SDK client.
- */
 export async function getTrueForgeClient(baseUrl = getTrueForgeUrl()): Promise<any> {
-  if (cachedClient) {
-    return cachedClient;
-  }
   const { TrueForge } = await import('@truefoundry/trueforge-sdk');
-  cachedClient = new TrueForge({
+  return new TrueForge({
     baseUrl,
     timeoutInSeconds: 120,
   });
-  return cachedClient;
 }
 
 /**
@@ -30,7 +21,7 @@ export async function getTrueForgeClient(baseUrl = getTrueForgeUrl()): Promise<a
 export async function createSession(agentName: string, baseUrl = getTrueForgeUrl()): Promise<string> {
   const client = await getTrueForgeClient(baseUrl);
   const response = await client.sessions.create({
-    agent: agentName,
+    agent: { name: agentName },
   });
   return response.data.id;
 }
@@ -44,7 +35,8 @@ export async function createTurnStream(
   baseUrl = getTrueForgeUrl()
 ): Promise<AsyncIterable<{ data: any }>> {
   const client = await getTrueForgeClient(baseUrl);
-  return client.sessions.createTurnStream(sessionId, { input });
+  const stream = await client.sessions.createTurnStream(sessionId, { input });
+  return typeof stream.withMetadata === 'function' ? stream.withMetadata() : stream;
 }
 
 /**

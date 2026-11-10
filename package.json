@@ -39,7 +39,12 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "tsx --test test/*.test.ts",
-    "trueforge": "node scripts/start-trueforge.mjs"
+    "trueforge": "node scripts/start-trueforge.mjs",
+    "setup": "tsx scripts/setup.ts",
+    "reset:flask": "tsx scripts/reset-flask.ts",
+    "verify:a": "tsx scripts/verify.ts a",
+    "verify:b": "tsx scripts/verify.ts b",
+    "verify:c": "tsx scripts/verify.ts c"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
