@@ -17,6 +17,21 @@ let httpServer: http.Server | null = null;
 const coreSessions = new Map<string, any>();
 const extraSessions = new Map<string, any>();
 
+let lastToolCallTime = 0;
+const MIN_TOOL_INTERVAL_MS = 2500;
+
+/**
+ * Paces MCP tool execution to prevent bursting against provider rate limits (e.g. 15 RPM / 250k TPM).
+ */
+async function throttleTool(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastToolCallTime;
+  if (elapsed < MIN_TOOL_INTERVAL_MS && lastToolCallTime > 0) {
+    await new Promise((resolve) => setTimeout(resolve, MIN_TOOL_INTERVAL_MS - elapsed));
+  }
+  lastToolCallTime = Date.now();
+}
+
 /**
  * Registers Core MCP tools (read_file, search_workspace, and later propose_edit, run_command).
  */
@@ -30,6 +45,7 @@ function registerCoreTools(server: any): void {
       end_line: z.number().int().positive().optional().describe('1-based ending line number (inclusive)'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeReadFile(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
@@ -46,6 +62,7 @@ function registerCoreTools(server: any): void {
       case_sensitive: z.boolean().optional().describe('Whether the search is case-sensitive (default false)'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeSearchWorkspace(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
@@ -64,6 +81,7 @@ function registerCoreTools(server: any): void {
       sources: z.array(z.string()).optional().describe('List of files informing this edit'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeProposeEdit(params);
       return {
         content: [{ type: 'text', text }],
@@ -78,6 +96,7 @@ function registerCoreTools(server: any): void {
       command: z.string().describe('Terminal command to execute in workspace root'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeRunCommand(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
@@ -98,6 +117,7 @@ function registerExtraTools(server: any): void {
       path_prefix: z.string().optional().describe('Optional subfolder path prefix'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeRepoOutline(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
@@ -112,6 +132,7 @@ function registerExtraTools(server: any): void {
       task: z.string().describe('Natural language description of the editing task'),
     },
     async (params: any) => {
+      await throttleTool();
       const text = await executeSuggestContext(params, runContext.workspaceRoot);
       return {
         content: [{ type: 'text', text }],
