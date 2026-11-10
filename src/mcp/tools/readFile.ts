@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { E_BINARY, E_BUDGET, E_NOT_FOUND } from '../../shared/contracts';
 import { READ_MAX_LINES } from '../../shared/limits';
 import { validateWorkspacePath } from '../pathGuard';
-import { runContext } from '../runContext';
+import { estimateTokens, recordRetrievalTokens } from '../budget';
 
 export interface ReadFileParams {
   path: string;
@@ -94,11 +94,11 @@ export async function executeReadFile(
     body += `\n... [truncated: file has ${totalLines} lines total. Request a narrower range to read more]`;
   }
 
-  const estimatedTokens = Math.ceil(body.length / 4);
-  const budgetResult = runContext.consumeBudget(estimatedTokens);
+  const estimatedTokens = estimateTokens(body);
+  const budgetResult = recordRetrievalTokens(estimatedTokens);
 
-  if (budgetResult.used > runContext.budgetMax) {
-    return E_BUDGET(budgetResult.used, runContext.budgetMax);
+  if (budgetResult.exhausted) {
+    return E_BUDGET(budgetResult.used, budgetResult.max);
   }
 
   const header = `[${relPath} | lines ${start}-${end} of ${totalLines} | ~${estimatedTokens} tokens | budget left ${budgetResult.remaining}]`;
