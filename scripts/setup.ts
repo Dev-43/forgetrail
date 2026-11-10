@@ -136,8 +136,8 @@ async function run() {
       await startMcpServer(3333, '127.0.0.1');
       startedOwnMcp = true;
     }
-  } catch {
-    // ignore
+  } catch (err: any) {
+    console.error('MCP server startup error in setup:', err.message);
   }
 
   // Step 3: connector-core
@@ -272,7 +272,9 @@ async function run() {
     });
 
     let reply = '';
+    const allEvents: any[] = [];
     for await (const chunk of stream) {
+      allEvents.push(chunk);
       const event = (chunk as any)?.data ?? chunk;
       if (event?.type === 'model.message.delta') {
         reply += (event as any).content ?? '';
@@ -282,6 +284,7 @@ async function run() {
       console.log('PASS smoke-primary');
     } else {
       console.log(`FAIL smoke-primary: unexpected reply "${reply.trim()}"`);
+      console.log('Events received:', JSON.stringify(allEvents, null, 2));
       if (startedOwnMcp) await stopMcpServer().catch(() => {});
       process.exit(1);
     }
