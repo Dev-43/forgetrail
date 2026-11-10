@@ -230,7 +230,14 @@ Entry format (copy this):
 - Rubric: B1 (10).
 - Call line: "Every retrieval tool deducts from the 12,000 token budget, displays budget left in headers, and emits live updates to the UI."
 
-(Add D-038 onward below. Template above.)
+### D-038 Task C-10: repo_outline tool and regex definition extractor
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-10
+- Decision: Implemented keyword extraction in `src/context/keywords.ts`, regex symbol extraction (Python classes/functions, JS/TS functions/classes/constants) in `src/context/outline.ts`, and the `repo_outline` MCP tool in `src/mcp/tools/repoOutline.ts` wired to `forgetrail-extra` in `src/mcp/server.ts`. Outlines are scored by basename exact/substring matches (+10/+5), path matches (+3), source file bonuses (+5), and symbol keyword occurrences (+2 capped at 10 per keyword). Output is bounded to `OUTLINE_MAX_TOKENS` (1,500) and charges the run retrieval budget. Added unit tests in `test/outline.test.ts` verifying extraction, token limits, and ranking `src/flask/cli.py` first on Flask 3.1.3 for `cli command config`.
+- Why: Satisfies rubric B1 (context retrieval via repo outline) allowing models to discover workspace symbols without consuming massive context tokens.
+- Rubric: B1 (10).
+- Call line: "repo_outline delivers a regex-extracted symbol outline bounded to 1500 tokens, accurately ranking core source files ahead of test suites."
+
+(Add D-039 onward below. Template above.)
 
 ---
 
