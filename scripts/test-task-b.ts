@@ -32,14 +32,10 @@ async function runTaskBIteration(
   console.log(`========================================`);
 
   let attempts = 0;
-  const maxAttempts = 2;
+  const maxAttempts = 3;
 
   while (attempts < maxAttempts) {
     attempts++;
-    if (attempts > 1) {
-      console.log(`Retry attempt ${attempts} for iteration ${iteration} after backoff...`);
-      await new Promise((r) => setTimeout(r, 3000));
-    }
 
     // 1. Reset Flask to clean state
     execSync('npm run reset:flask', { stdio: 'inherit' });
@@ -68,8 +64,18 @@ async function runTaskBIteration(
           runResult.message.includes('high demand') ||
           runResult.message.includes('Headers Timeout') ||
           runResult.message.includes('timeout') ||
+          runResult.message.includes('quota') ||
           runResult.message.includes('fetch failed'))
       ) {
+        let backoffMs = 15000;
+        const retryMatch = runResult.message.match(/retry in ([\d\.]+)s/i);
+        if (retryMatch) {
+          backoffMs = Math.ceil(parseFloat(retryMatch[1]) * 1000) + 3000;
+        } else if (runResult.message.includes('429') || runResult.message.includes('quota')) {
+          backoffMs = 60000;
+        }
+        console.log(`Quota / network error detected. Waiting ${Math.round(backoffMs / 1000)}s before attempt ${attempts + 1}...`);
+        await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
       return { success: false, durationMs, retries: attempts - 1, error: `Run failed: ${runResult.message}` };
@@ -134,6 +140,10 @@ async function main() {
     if (passCount >= 2 && i >= 2) {
       console.log(`\nMilestone M2 requirement satisfied: ${passCount} of ${i} consecutive runs passed!`);
       break;
+    }
+    if (i < 3) {
+      console.log('\nPausing 20s between iterations to allow API quota window to reset...');
+      await new Promise((r) => setTimeout(r, 20000));
     }
   }
 
