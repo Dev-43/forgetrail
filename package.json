@@ -21,6 +21,10 @@
         "title": "ForgeTrail: Hello"
       },
       {
+        "command": "forgetrail.inlineEdit",
+        "title": "ForgeTrail: Inline Edit"
+      },
+      {
         "command": "forgetrail.undoLast",
         "title": "ForgeTrail: Undo Last Edit"
       },
@@ -34,6 +38,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "test": "tsx --test test/*.test.ts",
     "trueforge": "node scripts/start-trueforge.mjs"
   },
   "dependencies": {
