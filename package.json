@@ -1,0 +1,42 @@
+{
+  "name": "forgetrail",
+  "displayName": "ForgeTrail",
+  "description": "VS Code extension powered by TrueForge local agent loop",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:forgetrail.hello"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "forgetrail.hello",
+        "title": "ForgeTrail: Hello"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "trueforge": "node scripts/start-trueforge.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.6.0",
+    "@truefoundry/trueforge-sdk": "0.184.1"
+  },
+  "devDependencies": {
+    "@truefoundry/trueforge": "0.184.2",
+    "@types/node": "^22.14.0",
+    "@types/vscode": "^1.93.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
