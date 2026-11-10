@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Compilation and build artifacts
+out/
+dist/
+*.vsix
+.vscode-test/
+
+# Local spike and testing directory (kept separate)
+dev/
+
+# Environment files and credentials (CRITICAL: never commit secrets)
+.env
+*.env
+!.env.example
+
+# SQLite runtime databases (TrueForge backend storage)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+forge.sqlite*
+
+# Local configuration overrides (with personal API keys)
+config/models.json
+!config/models.example.json
+
+# Python virtual environments and caches (Flask baseline & test runs)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.tox/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor configurations (preserve shared launch/tasks configs)
+*.swp
+*.swo
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
