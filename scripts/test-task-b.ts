@@ -67,10 +67,10 @@ async function runTaskBIteration(
           runResult.message.includes('quota') ||
           runResult.message.includes('fetch failed'))
       ) {
-        let backoffMs = 15000;
+        let backoffMs = 60000;
         const retryMatch = runResult.message.match(/retry in ([\d\.]+)s/i);
         if (retryMatch) {
-          backoffMs = Math.ceil(parseFloat(retryMatch[1]) * 1000) + 3000;
+          backoffMs = Math.max(45000, Math.ceil(parseFloat(retryMatch[1]) * 1000) + 10000);
         } else if (runResult.message.includes('429') || runResult.message.includes('quota')) {
           backoffMs = 60000;
         }
@@ -142,8 +142,8 @@ async function main() {
       break;
     }
     if (i < 3) {
-      console.log('\nPausing 20s between iterations to allow API quota window to reset...');
-      await new Promise((r) => setTimeout(r, 20000));
+      console.log('\nPausing 45s between iterations to allow API quota window to reset...');
+      await new Promise((r) => setTimeout(r, 45000));
     }
   }
 

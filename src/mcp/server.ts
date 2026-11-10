@@ -18,7 +18,7 @@ const coreSessions = new Map<string, any>();
 const extraSessions = new Map<string, any>();
 
 let lastToolCallTime = 0;
-const MIN_TOOL_INTERVAL_MS = 2500;
+const MIN_TOOL_INTERVAL_MS = 4500;
 
 /**
  * Paces MCP tool execution to prevent bursting against provider rate limits (e.g. 15 RPM / 250k TPM).
