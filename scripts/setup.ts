@@ -272,8 +272,11 @@ async function run() {
     });
 
     let reply = '';
-    for await (const { data: event } of stream.withMetadata()) {
-      if (event.type === 'model.message.delta') reply += (event as any).content ?? '';
+    for await (const chunk of stream) {
+      const event = (chunk as any)?.data ?? chunk;
+      if (event?.type === 'model.message.delta') {
+        reply += (event as any).content ?? '';
+      }
     }
     if (reply.toLowerCase().includes('ready')) {
       console.log('PASS smoke-primary');
@@ -299,8 +302,11 @@ async function run() {
       });
 
       let reply = '';
-      for await (const { data: event } of stream.withMetadata()) {
-        if (event.type === 'model.message.delta') reply += (event as any).content ?? '';
+      for await (const chunk of stream) {
+        const event = (chunk as any)?.data ?? chunk;
+        if (event?.type === 'model.message.delta') {
+          reply += (event as any).content ?? '';
+        }
       }
       if (reply.toLowerCase().includes('ready')) {
         console.log('PASS smoke-fallback');
