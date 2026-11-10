@@ -154,7 +154,17 @@ Entry format (copy this):
 - Why: Clear ownership prevents merge collisions; granular commits guarantee auditability and rubric scoring (C2 write-up).
 - Rubric: C2 (honest audit trail), Eligibility.
 
-(Add D-027 onward below. Template above.)
+### D-027 Task C-0: Extension scaffold, pinned TrueForge, and build baseline
+- Date 2026-11-10 · Author Devesh with Antigravity assistant · Task: C-0
+- Decision: Scaffolding created with package.json (`forgetrail`), tsconfig strict mode, VS Code launch/tasks configurations for Extension Development Host, `src/extension.ts` hello command, and pinned TrueForge dependencies: `@truefoundry/trueforge@0.184.2`, `@truefoundry/trueforge-sdk@0.184.1`, `@modelcontextprotocol/sdk@1.6.0`. Local VS Code version recorded: 1.144.1. TrueForge installed locally into `node_modules` and executable via `npm run trueforge`.
+- Rubric: C-0 acceptance, Eligibility.
+
+### D-028 Task A-1: Environment and model configuration templates
+- Date 2026-11-10 · Author Pranav (API) with Antigravity assistant · Task: A-1
+- Decision: Created `.env.example` documenting all C2 environment variables and `config/models.example.json` documenting the C3 schema for primary (`google-gemini/gemini-3-1-flash-lite`) and OpenAI-compatible fallback, with zero real API keys committed.
+- Rubric: A-1 acceptance, R6 (no secrets).
+
+(Add D-029 onward below. Template above.)
 
 ---
 
@@ -206,6 +216,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | Date / time | Agent | Launched by | Instruction (one line) | Files changed | UNCLEAR stops |
 |---|---|---|---|---|---|
 | 2026-11-10 10:25 IST | Antigravity | Devesh | Initial repository setup, team assignment, .gitignore creation, and git commit rules | `DECISIONS.md`, `BUILD.md`, `BUILD_api.md`, `BUILD_ui.md`, `SETUP.md`, `INTEGRATION.md`, `.gitignore` | None |
+| 2026-11-10 10:50 IST | Antigravity | Devesh | Task C-0 & A-1: Scaffold extension, install local TrueForge 0.184.2, configure launch/tasks, add env/models templates | `package.json`, `package-lock.json`, `tsconfig.json`, `src/extension.ts`, `.vscode/*`, `scripts/start-trueforge.mjs`, `.env.example`, `config/models.example.json`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
