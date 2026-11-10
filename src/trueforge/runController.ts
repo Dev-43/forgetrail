@@ -17,7 +17,7 @@ import {
 import { AUTO_DENY_LIMIT_PER_FILE } from '../shared/limits';
 import { runContext } from '../mcp/runContext';
 import { validateWorkspacePath } from '../mcp/pathGuard';
-import { isCommandAutoAllowed } from '../mcp/tools/runCommand';
+import { isCommandAutoAllowed, killActiveCommand } from '../mcp/tools/runCommand';
 import { createSession, sendTurn, sendApprovals, ToolApprovalInput, cancelSession, getTrueForgeUrl } from './client';
 import { EventMapper } from './eventMapper';
 
@@ -135,6 +135,13 @@ export async function cancelRun(): Promise<void> {
 
   currentState = 'cancelling';
   runContext.cancel();
+
+  // Terminate any running child process tree immediately (C-19)
+  try {
+    killActiveCommand();
+  } catch (err) {
+    console.error('Error killing active command on cancel:', err);
+  }
 
   if (activePresenter && currentRunId) {
     try {
