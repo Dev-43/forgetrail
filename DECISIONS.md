@@ -223,7 +223,14 @@ Entry format (copy this):
 - Rubric: A1 (10), Gate, B2 (10), B4.
 - Call line: "Task A succeeded three consecutive times with human approval gate, FLASK_DEBUG verification, and clean atomic undo."
 
-(Add D-037 onward below. Template above.)
+### D-037 Task C-9: Retrieval budget enforcement
+- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-9
+- Decision: Implemented `src/mcp/budget.ts` tracking estimated tokens via chars/4 heuristic against `RUN_RETRIEVAL_MAX_TOKENS` (12,000 tokens). Retrieval tools (`read_file`, `search_workspace`) call `recordRetrievalTokens()`, report `budget left` in standard response headers, emit `budget.update` events for live panel monitoring, and return `E_BUDGET` when `used >= RUN_RETRIEVAL_MAX_TOKENS`. Added unit tests in `test/budget.test.ts` covering calculation, tracking, event emission, and E_BUDGET cutoff.
+- Why: Satisfies rubric B1 (retrieval budget meter and token conservation) preventing context runaway.
+- Rubric: B1 (10).
+- Call line: "Every retrieval tool deducts from the 12,000 token budget, displays budget left in headers, and emits live updates to the UI."
+
+(Add D-038 onward below. Template above.)
 
 ---
 
