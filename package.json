@@ -48,7 +48,9 @@
     "reset:flask": "tsx scripts/reset-flask.ts",
     "verify:a": "tsx scripts/verify.ts a",
     "verify:b": "tsx scripts/verify.ts b",
-    "verify:c": "tsx scripts/verify.ts c"
+    "verify:c": "tsx scripts/verify.ts c",
+    "test:task-a": "tsx scripts/test-task-a.ts",
+    "test:task-b": "tsx scripts/test-task-b.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
