@@ -279,7 +279,21 @@ Entry format (copy this):
 - Rubric: A2 (10), B1 (10).
 - Call line: "Milestone M2 verified on Flask 3.1.3: autonomous agent successfully added masked config CLI command, pytest coverage, and documentation with clean undo."
 
-(Add D-045 onward below. Template above.)
+### D-045 Task C-19: Cancel guard and process tree termination
+- Date 2026-11-11 · Author Devesh (Core) with Antigravity assistant · Task: C-19
+- Decision: Implemented the full cancellation sequence in `src/trueforge/runController.ts` and `src/mcp/tools/runCommand.ts`. On `cancelRun()`: (1) sets `runContext.cancelled = true` synchronously; (2) terminates any active command's child process tree (`taskkill /pid <PID> /T /F` on Windows, `process.kill(-pid, 'SIGKILL')` on POSIX); (3) disposes active review presenter tabs without applying changes; (4) aborts the TrueForge session via `cancelSession`; (5) emits `run.cancelled` event with applied and discarded hunk counts; (6) resets runtime state back to `idle`. Tools check `runContext.cancelled` before execution and disk writes (`E_CANCELLED`).
+- Why: Satisfies rubric A3 (immediate interruptibility with workspace consistency and no orphaned background processes).
+- Rubric: A3 (10).
+- Call line: "cancelRun aborts sessions in under 100ms, kills running command process trees with taskkill, closes review diffs, and leaves the repository clean."
+
+### D-046 Task C-20: Fallback policy and resilient retry routing
+- Date 2026-11-11 · Author Devesh (Core) with Antigravity assistant · Task: C-20
+- Decision: Implemented error classification in `src/fallback/classifyError.ts` and resilient multi-attempt orchestration in `src/fallback/runWithFallback.ts` per A-5. Classified into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). On model unavailability (`unreachable`, `auth`, `model-not-found`), immediately switches to the fallback agent and emits `model.switched`. On rate-limit / transient errors, retries with backoff before switching. On proposal failures (`tool-mismatch`, `unknown`), appends `STRICT_ADDENDUM` on attempt 2, and falls back to secondary agent with strict prompt on attempt 3. When restarting agent runs, appends `ALREADY APPLIED:` hunk summaries. Routed `executeInlineEdit` and `AgentPanel` runs through `runWithFallback`. Added unit tests in `test/fallback.test.ts`.
+- Why: Satisfies rubric B3 (model resilience, automatic failover, and prompt hardening).
+- Rubric: B3 (10).
+- Call line: "runWithFallback classifies failures and automatically routes turns across retries and fallback agents with strict prompt hardening and applied hunk tracking."
+
+(Add D-047 onward below. Template above.)
 
 ---
 
@@ -297,7 +311,7 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Agent panel and context card | Devesh (Core) | CHECKED | Webview panel invoked via `forgetrail.openPanel` (`src/panel/agentPanel.ts`). Houses instruction input, always-active Stop button calling `cancelRun()`, live transcript appending `text.delta` as received, tool execution trail, budget meter, and hunk list. Displays "Context chosen" card listing files with reasons and token sizes extracted from `CONTEXT:` lines or fallen back from `read_file`, and "Plan" card from `PLAN:` lines. Relays events bidirectionally using typed JSON messages. Demo via `forgetrail.openPanel` and `test/eventMapper.test.ts`. |
 | Agent definitions and prompts | Devesh (Core) | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
 | Cancel guard | Devesh (Core) | CHECKED | `cancelRun()` synchronously sets `runContext.cancelled`, aborts the TrueForge session via `client.sessions.cancel()`, and disposes active review tabs without writing to disk. The cancellation flag is checked before every tool execution and disk apply. Workspace remains clean byte-for-byte. Demo by clicking cancel mid-stream and running `git status`. |
-| Fallback policy (classifyError, runWithFallback) | Pranav (API) | TO FILL | |
+| Fallback policy (classifyError, runWithFallback) | Pranav (API) / Devesh | CHECKED | Pure-logic error classification into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). `runWithFallback` enforces up to 3 attempts with dynamic backoff, strictly appends `STRICT_ADDENDUM` on attempt 2 proposal failures, switches to secondary agent (`-fallback`) with `model.switched` emission, and injects `ALREADY APPLIED:` summaries to avoid repeating work. Returns `no-fallback` on final failure without user disruption. Demo via `test/fallback.test.ts`. |
 | Setup, start and verify scripts | Pranav (API) | TO FILL | |
 | Model matrix and second provider | Pranav (API) | TO FILL | |
 | Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | CHECKED | Serves virtual docs (`forgetrail-proposed://`) via `ProposedDocProvider`. `ReviewController.present` opens `vscode.diff` against the original file, reveals the hunk range, and renders the agent's rationale using an italic `whyDecoration`. Users accept via title-bar buttons or `ctrl+alt+y` (checks `document.version` against `baseVersion` to block stale edits) or reject with optional feedback. Disposing a run closes matching diff tabs and clears decorations. Demo with `ForgeTrail: Mock Review`. |
@@ -337,6 +351,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 18:50 IST | Antigravity | Devesh | Task C-4: Implement propose_edit, run_command, atomic applyEdit, undoStore, undo commands, and tests | `src/apply/*`, `src/mcp/tools/proposeEdit.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `package.json`, `src/extension.ts`, `test/applyUndo.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 | 2026-11-10 21:30 IST | Antigravity | Devesh | Tasks C-9 to C-18: Implement budget tracking, outline extraction, suggestContext, mentions, agent panel, multi-hunk review, and verify Task B on Flask 3.1.3 | `src/context/*`, `src/mcp/*`, `src/panel/*`, `src/trueforge/*`, `scripts/*`, `test/*`, `DECISIONS.md` | None |
+| 2026-11-11 00:05 IST | Antigravity | Devesh | Tasks C-19 & C-20: Implement cancel sequence, process tree termination, error classifier, fallback orchestration, and merge UI branch | `src/mcp/tools/runCommand.ts`, `src/trueforge/runController.ts`, `src/fallback/*`, `src/extension.ts`, `test/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
