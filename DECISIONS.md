@@ -303,7 +303,19 @@ Entry format (copy this):
 - Rubric: A3 (10), B3 (10).
 - Call line: "Milestone M3 verified: automatic failover on 401/429 with clean state on rejection, and sub-second cancel closing diffs and killing processes."
 
-(Add D-048 onward below. Template above.)
+### D-048 Tasks A-8, C-24, C-25: Multi-branch integration into main and write-up assembly
+- Date 2026-11-11 · Author Devesh, Pranav, Vidyankshini with Antigravity assistant · Tasks: A-8, C-24, C-25
+- Decision: Completed full multi-branch repository integration directly into `main`:
+  1. Merged `origin/ui` into `main` with Vidyankshini as co-author (`4d78e8c`), officially closing and merging GitHub PR #1.
+  2. Created branch `api` with Pranav's complete API scope and merged into `main` via GitHub Pull Request #2 (`f72e3c6`).
+  3. Merged `core/engine` into `main` (`5c4ffc0`), unifying Core Engine, UI review, and API resilience into production branch.
+  4. Executed integration verification suite on `main`: 0 TypeScript diagnostics, 49/49 unit tests pass, 11/11 pre-submission checks pass, and Flask workspace verified clean (`verify:c`).
+  5. Authored write-up drafts (`docs/writeup/01-team.md`, `02-start.md`, `05-models.md`, `07-tools.md`) and assembled master write-up in `docs/writeup/WRITEUP.md` with all 8 mandated headings in exact order.
+- Why: Satisfies rubric C2 (comprehensive, honest submission write-up) and integration gates.
+- Rubric: C2 (15).
+- Call line: "All branches merged into main via co-authored commits and pull requests; 49/49 tests and 11/11 submission checks pass."
+
+(Add D-049 onward below. Template above.)
 
 ---
 
@@ -364,6 +376,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-11 00:05 IST | Antigravity | Devesh | Tasks C-19 & C-20: Implement cancel sequence, process tree termination, error classifier, fallback orchestration, and merge UI branch | `src/mcp/tools/runCommand.ts`, `src/trueforge/runController.ts`, `src/fallback/*`, `src/extension.ts`, `test/*`, `DECISIONS.md` | None |
 | 2026-11-11 08:45 IST | Antigravity | Pranav | Tasks A-3, A-4, A-6, A-7, A-9, C-26: Setup resilience flags, model matrix, submission check, writeup sections, README | `scripts/setup.ts`, `scripts/test-models.ts`, `scripts/check-submission.ts`, `docs/*`, `README.md`, `DECISIONS.md` | None |
 | 2026-11-11 09:05 IST | Antigravity | Devesh & Pranav | Tasks C-21, C-22, C-23: Implement and execute Task C fallback and cancel verification test suites | `scripts/test-task-c.ts`, `scripts/test-cancel.ts`, `DECISIONS.md` | None |
+| 2026-11-11 09:40 IST | Antigravity | Devesh | Tasks A-8, C-24, C-25: Multi-branch integration (UI co-authored, API PR #2, core/engine), full verification on main, and write-up assembly | `docs/writeup/*`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
