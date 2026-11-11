@@ -27,21 +27,32 @@ if (existsSync(envPath)) {
 }
 
 // Set required TrueForge environment variables
-envVars['OUTBOUND_URL_ALLOWED_HOSTS'] = JSON.stringify(['127.0.0.1', 'localhost']);
+const defaultAllowedHosts = [
+  '127.0.0.1',
+  'localhost',
+  'generativelanguage.googleapis.com',
+  'api.groq.com',
+  'api.openai.com',
+  'openrouter.ai',
+  'api.anthropic.com'
+];
+if (!envVars['OUTBOUND_URL_ALLOWED_HOSTS']) {
+  envVars['OUTBOUND_URL_ALLOWED_HOSTS'] = JSON.stringify(defaultAllowedHosts);
+}
 envVars['SQLITE_PATH'] = resolve(process.cwd(), 'forge.sqlite');
 
 console.log('Starting TrueForge 0.184.2 on http://localhost:8790...');
 
-// Try running local binary if installed, else fallback to npx
+// Run local trueforge cli with node directly if installed, else fallback to npx
+const localCli = resolve(process.cwd(), 'node_modules', '@truefoundry', 'trueforge', 'dist', 'cli.js');
 const isWindows = process.platform === 'win32';
-const localBin = resolve(process.cwd(), 'node_modules', '.bin', isWindows ? 'trueforge.cmd' : 'trueforge');
-const command = existsSync(localBin) ? localBin : (isWindows ? 'npx.cmd' : 'npx');
-const args = existsSync(localBin) ? [] : ['-y', '@truefoundry/trueforge@0.184.2'];
+const command = existsSync(localCli) ? process.execPath : (isWindows ? 'npx.cmd' : 'npx');
+const args = existsSync(localCli) ? [localCli] : ['-y', '@truefoundry/trueforge@0.184.2'];
 
 const child = spawn(command, args, {
   env: envVars,
   stdio: 'inherit',
-  shell: isWindows
+  shell: !existsSync(localCli) && isWindows
 });
 
 child.on('error', (err) => {

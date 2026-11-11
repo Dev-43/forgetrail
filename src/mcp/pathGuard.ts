@@ -33,10 +33,10 @@ export function validateWorkspacePath(
   inputPath: string,
   workspaceRoot: string
 ): PathValidationResult {
-  const normalizedRoot = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalizedRoot = path.resolve(workspaceRoot).replace(/\\/g, '/').replace(/\/+$/, '');
   const cleanInput = normalizePath(inputPath);
 
-  // If path is already absolute, check whether it is inside workspaceRoot
+  // If path is already absolute, resolve and verify containment
   let absPath: string;
   if (path.isAbsolute(cleanInput) || /^[a-zA-Z]:\//.test(cleanInput)) {
     absPath = path.resolve(cleanInput).replace(/\\/g, '/');
@@ -44,7 +44,7 @@ export function validateWorkspacePath(
     absPath = path.resolve(normalizedRoot, cleanInput).replace(/\\/g, '/');
   }
 
-  // Check workspace containment
+  // Check workspace containment (case-insensitive for Windows safety)
   if (!absPath.toLowerCase().startsWith(normalizedRoot.toLowerCase())) {
     return {
       ok: false,
@@ -72,4 +72,3 @@ export function validateWorkspacePath(
     absolutePath: absPath,
   };
 }
-

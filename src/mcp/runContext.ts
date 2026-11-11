@@ -17,7 +17,7 @@ export interface AppliedHunk {
 
 /**
  * Singleton managing the active run's runtime state:
- * - active runId & single-run concurrency check
+ * - active runId & single-run concurrency check (C11)
  * - cancellation flag (synchronously checked before applies and tool executions)
  * - retrieval budget tracking (used vs RUN_RETRIEVAL_MAX_TOKENS)
  * - inline selection region for bounding inline edits
@@ -27,6 +27,7 @@ export class RunContextManager {
   private static instance: RunContextManager;
 
   public activeRunId: string | null = null;
+  public workspaceRoot: string = process.cwd();
   public cancelled = false;
   public budgetUsed = 0;
   public readonly budgetMax = RUN_RETRIEVAL_MAX_TOKENS;
@@ -43,8 +44,15 @@ export class RunContextManager {
     return RunContextManager.instance;
   }
 
-  public startRun(runId: string, selection?: SelectionRegion): void {
+  public setWorkspaceRoot(root: string): void {
+    this.workspaceRoot = root;
+  }
+
+  public startRun(runId: string, workspaceRoot?: string, selection?: SelectionRegion): void {
     this.activeRunId = runId;
+    if (workspaceRoot) {
+      this.workspaceRoot = workspaceRoot;
+    }
     this.cancelled = false;
     this.budgetUsed = 0;
     this.selectionRegion = selection;
@@ -87,4 +95,3 @@ export class RunContextManager {
 }
 
 export const runContext = RunContextManager.getInstance();
-

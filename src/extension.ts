@@ -1,4 +1,10 @@
 import * as vscode from 'vscode';
+import { startMcpServer, stopMcpServer } from './mcp/server';
+import { runContext } from './mcp/runContext';
+import { undoStore } from './apply/undoStore';
+import { setReviewPresenter } from './trueforge/runController';
+import { executeInlineEdit } from './inline/inlineEdit';
+import { AgentPanel } from './panel/agentPanel';
 import {
   EMPTY_SCHEME,
   PROPOSED_SCHEME,
@@ -8,22 +14,27 @@ import { ReviewController } from './review/ui/reviewController';
 import { StatusBarManager } from './ui/statusBar';
 import { registerMockReview } from './review/ui/mockReview';
 import { registerSelectionHighlight } from './ui/selectionHighlight';
-import { showSelectCodeNotification } from './ui/notifications';
 
 let proposedDocProvider: ProposedDocProvider | undefined;
 let reviewController: ReviewController | undefined;
 let statusBarManager: StatusBarManager | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
-  // Initialize virtual document provider
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (folders && folders.length > 0) {
+    runContext.setWorkspaceRoot(folders[0].uri.fsPath);
+  }
+
+  // Initialize virtual document provider for proposed diff views
   proposedDocProvider = new ProposedDocProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, proposedDocProvider),
     vscode.workspace.registerTextDocumentContentProvider(EMPTY_SCHEME, proposedDocProvider)
   );
 
-  // Initialize review controller
+  // Initialize native diff ReviewController and wire as primary review presenter
   reviewController = new ReviewController(proposedDocProvider);
+  setReviewPresenter(reviewController);
   context.subscriptions.push({
     dispose: () => reviewController?.destroy(),
   });
@@ -34,41 +45,65 @@ export function activate(context: vscode.ExtensionContext): void {
     dispose: () => statusBarManager?.dispose(),
   });
 
-  // Register mock review command (U-2 harness)
+  // Register mock review harness (U-2)
   registerMockReview(context, reviewController);
 
   // Register selection highlight on inline edit runs (U-3)
   registerSelectionHighlight(context);
 
-  // Hello command from C-0
-  const helloCommand = vscode.commands.registerCommand('forgetrail.hello', () => {
+  // Start MCP server on fixed port 3333 per C1
+  try {
+    await startMcpServer(3333, '127.0.0.1');
+    console.log('ForgeTrail MCP server running on http://127.0.0.1:3333');
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Failed to start ForgeTrail MCP server: ${err?.message}`);
+  }
+
+  const helloCmd = vscode.commands.registerCommand('forgetrail.hello', () => {
     vscode.window.showInformationMessage('Hello from ForgeTrail!');
   });
-  context.subscriptions.push(helloCommand);
 
-  // Stub command for inline edit (Core replaces with C-6)
-  const inlineEditCommand = vscode.commands.registerCommand('forgetrail.inlineEdit', async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || editor.selection.isEmpty) {
-      showSelectCodeNotification();
-      return;
+  const inlineEditCmd = vscode.commands.registerCommand('forgetrail.inlineEdit', async () => {
+    await executeInlineEdit();
+  });
+
+  const undoLastCmd = vscode.commands.registerCommand('forgetrail.undoLast', async () => {
+    const res = await undoStore.undoLast(runContext.workspaceRoot);
+    if (res.success) {
+      vscode.window.showInformationMessage(res.message);
+    } else {
+      vscode.window.showWarningMessage(res.message);
     }
-    vscode.window.showInformationMessage('ForgeTrail: Inline Edit triggered (waiting for Core engine integration).');
   });
-  context.subscriptions.push(inlineEditCommand);
 
-  // Stub commands for undo (Core replaces with C-4)
-  const undoLastCommand = vscode.commands.registerCommand('forgetrail.undoLast', async () => {
-    vscode.window.showInformationMessage('ForgeTrail: Undo last hunk.');
+  const undoRunCmd = vscode.commands.registerCommand('forgetrail.undoRun', async () => {
+    const res = await undoStore.undoRun(undefined, runContext.workspaceRoot);
+    if (res.success) {
+      vscode.window.showInformationMessage(res.message);
+    } else {
+      vscode.window.showWarningMessage(res.message);
+    }
   });
-  const undoRunCommand = vscode.commands.registerCommand('forgetrail.undoRun', async () => {
-    vscode.window.showInformationMessage('ForgeTrail: Undo entire run.');
+
+  const openPanelCmd = vscode.commands.registerCommand('forgetrail.openPanel', () => {
+    AgentPanel.createOrShow(context.extensionUri);
   });
-  context.subscriptions.push(undoLastCommand, undoRunCommand);
+
+  context.subscriptions.push(helloCmd);
+  context.subscriptions.push(inlineEditCmd);
+  context.subscriptions.push(undoLastCmd);
+  context.subscriptions.push(undoRunCmd);
+  context.subscriptions.push(openPanelCmd);
+  context.subscriptions.push(
+    new vscode.Disposable(() => {
+      stopMcpServer().catch(console.error);
+    })
+  );
 }
 
-export function deactivate(): void {
+export async function deactivate(): Promise<void> {
   statusBarManager?.dispose();
   reviewController?.destroy();
   proposedDocProvider?.dispose();
+  await stopMcpServer();
 }

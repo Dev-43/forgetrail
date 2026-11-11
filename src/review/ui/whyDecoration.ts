@@ -1,12 +1,22 @@
-import * as vscode from 'vscode';
+import type * as vscodeTypes from 'vscode';
 
-let whyDecorationType: vscode.TextEditorDecorationType | undefined;
+function getVscode(): typeof vscodeTypes | null {
+  try {
+    return require('vscode');
+  } catch {
+    return null;
+  }
+}
+
+let whyDecorationType: vscodeTypes.TextEditorDecorationType | undefined;
 
 /**
  * Creates or retrieves the TextEditorDecorationType for the "why" explanation.
  * Uses ThemeColor('descriptionForeground') for optimal contrast in both light and dark themes.
  */
-function getDecorationType(): vscode.TextEditorDecorationType {
+function getDecorationType(): vscodeTypes.TextEditorDecorationType | null {
+  const vscode = getVscode();
+  if (!vscode) return null;
   if (!whyDecorationType) {
     whyDecorationType = vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
@@ -34,17 +44,20 @@ export function formatWhyText(reason?: string, sources?: string[]): string {
  * Attaches the "why" decoration after the specified 0-based line on the right side of the diff.
  */
 export function applyWhyDecoration(
-  editor: vscode.TextEditor,
+  editor: vscodeTypes.TextEditor,
   line0Based: number,
   reason?: string,
   sources?: string[]
 ): void {
+  const vscode = getVscode();
+  if (!vscode || !editor) return;
+
   const doc = editor.document;
   const targetLine = Math.min(Math.max(0, line0Based), Math.max(0, doc.lineCount - 1));
   const line = doc.lineAt(targetLine);
 
   const text = formatWhyText(reason, sources);
-  const decoration: vscode.DecorationOptions = {
+  const decoration: vscodeTypes.DecorationOptions = {
     range: new vscode.Range(line.range.end, line.range.end),
     renderOptions: {
       after: {
@@ -54,14 +67,17 @@ export function applyWhyDecoration(
   };
 
   const decType = getDecorationType();
-  editor.setDecorations(decType, [decoration]);
+  if (decType) {
+    editor.setDecorations(decType, [decoration]);
+  }
 }
 
 /**
  * Clears all active why decorations across editors and disposes the decoration type.
  */
 export function clearWhyDecorations(): void {
-  if (whyDecorationType) {
+  const vscode = getVscode();
+  if (vscode && whyDecorationType) {
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(whyDecorationType, []);
     }
