@@ -98,3 +98,9 @@ test('MCP HTTP server: starts, responds to health check, stops cleanly', async (
 
   await stopMcpServer();
 });
+
+test('pathGuard: a sibling folder sharing the workspace prefix is outside', () => {
+  const sibling = `${workspaceRoot}-evil/secret.txt`;
+  const result = validateWorkspacePath(sibling, workspaceRoot);
+  assert.equal(result.ok, false);
+});

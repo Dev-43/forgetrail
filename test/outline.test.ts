@@ -7,6 +7,10 @@ import { executeRepoOutline } from '../src/mcp/tools/repoOutline';
 import { resetBudget } from '../src/mcp/budget';
 import { OUTLINE_MAX_TOKENS } from '../src/shared/limits';
 
+import { existsSync as flaskExists } from 'node:fs';
+// Tests against the Flask 3.1.3 clone (git-ignored) are skipped when it is not present (see docs/flask-setup.md)
+const NO_FLASK = !flaskExists(require('node:path').resolve(__dirname, '../dev/forge-spike/flask/src/flask')) && 'Flask 3.1.3 clone not found at dev/forge-spike/flask';
+
 test('keywords: extracts tokens, drops stopwords, deduplicates', () => {
   const query = 'Please update the CLI command config in flask and make sure it works with python';
   const kws = extractKeywords(query);
@@ -34,7 +38,7 @@ test('outline: buildRepoOutline extracts symbols on TypeScript files', () => {
   assert.ok(res.tokens <= 1000, 'Tokens within budget limit');
 });
 
-test('outline: ranks src/flask/cli.py first on Flask repo for cli command config', () => {
+test('outline: ranks src/flask/cli.py first on Flask repo for cli command config', { skip: NO_FLASK }, () => {
   const flaskRoot = path.resolve(__dirname, '../dev/forge-spike/flask');
   const res = buildRepoOutline('cli command config', flaskRoot, OUTLINE_MAX_TOKENS);
 
@@ -50,7 +54,7 @@ test('outline: ranks src/flask/cli.py first on Flask repo for cli command config
   assert.ok(res.formattedText.includes('## src/flask/cli.py'), 'Formatted text has cli.py header');
 });
 
-test('outline: executeRepoOutline formats header and tracks budget', async () => {
+test('outline: executeRepoOutline formats header and tracks budget', { skip: NO_FLASK }, async () => {
   resetBudget();
   const flaskRoot = path.resolve(__dirname, '../dev/forge-spike/flask');
   const result = await executeRepoOutline({ query: 'cli command' }, flaskRoot);

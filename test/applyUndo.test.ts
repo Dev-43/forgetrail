@@ -154,3 +154,50 @@ test('runCommand: isCommandAutoAllowed recognizes allowlist', () => {
   assert.equal(isCommandAutoAllowed('rm -rf /'), false);
   assert.equal(isCommandAutoAllowed('curl http://malicious.com'), false);
 });
+
+test('runCommand: allowlist refuses chained, piped or redirected commands', () => {
+  assert.equal(isCommandAutoAllowed('pytest && rm -rf /'), false);
+  assert.equal(isCommandAutoAllowed('pytest; curl http://x'), false);
+  assert.equal(isCommandAutoAllowed('git status | sh'), false);
+  assert.equal(isCommandAutoAllowed('git diff > out.txt'), false);
+  assert.equal(isCommandAutoAllowed('pytest $(whoami)'), false);
+  assert.equal(isCommandAutoAllowed('pytestevil'), false);
+  assert.equal(isCommandAutoAllowed('pytest tests/test_cli.py -q'), true);
+});
+
+test('applyEdit: create refuses to overwrite an existing file (E_FILE_EXISTS)', async () => {
+  const filePath = path.join(tempDir, 'exists.py');
+  fs.writeFileSync(filePath, 'keep me\n', 'utf-8');
+  const req: ReviewRequest = {
+    id: 'hunk_create_existing', runId: 'run_c', threadId: 'main', path: 'exists.py', kind: 'create',
+    oldText: '', newText: 'overwritten\n', startLine: 1, endLine: 1, reason: 't', sources: [], index: 1, total: 1, baseVersion: 0,
+  };
+  const res = await applyHunk(req, tempDir);
+  assert.match(res, /^ERROR FILE_EXISTS: exists\.py/);
+  assert.equal(fs.readFileSync(filePath, 'utf-8'), 'keep me\n');
+});
+
+test('applyEdit: undo of a created file deletes it', async () => {
+  const req: ReviewRequest = {
+    id: 'hunk_create_new', runId: 'run_new', threadId: 'main', path: 'new_dir/new.py', kind: 'create',
+    oldText: '', newText: 'print(1)\n', startLine: 1, endLine: 1, reason: 't', sources: [], index: 1, total: 1, baseVersion: 0,
+  };
+  const res = await applyHunk(req, tempDir);
+  assert.match(res, /^APPLIED new_dir\/new\.py/);
+  assert.equal(fs.existsSync(path.join(tempDir, 'new_dir/new.py')), true);
+  const undo = await undoStore.undoLast(tempDir);
+  assert.equal(undo.success, true);
+  assert.equal(fs.existsSync(path.join(tempDir, 'new_dir/new.py')), false);
+});
+
+test('applyEdit: reported line range is correct on CRLF files', async () => {
+  const filePath = path.join(tempDir, 'crlf.py');
+  fs.writeFileSync(filePath, 'a = 1\r\nb = 2\r\nc = 3\r\n', 'utf-8');
+  const req: ReviewRequest = {
+    id: 'hunk_crlf', runId: 'run_crlf', threadId: 'main', path: 'crlf.py', kind: 'replace',
+    oldText: 'b = 2\nc = 3', newText: 'b = 20\nc = 30', startLine: 1, endLine: 1, reason: 't', sources: [], index: 1, total: 1, baseVersion: 0,
+  };
+  const res = await applyHunk(req, tempDir);
+  assert.equal(res, 'APPLIED crlf.py lines 2-3 (hunk hunk_crlf).');
+  assert.equal(fs.readFileSync(filePath, 'utf-8'), 'a = 1\r\nb = 20\r\nc = 30\r\n');
+});

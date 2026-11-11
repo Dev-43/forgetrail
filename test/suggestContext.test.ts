@@ -5,14 +5,18 @@ import { executeSuggestContext } from '../src/mcp/tools/suggestContext';
 import { resetBudget } from '../src/mcp/budget';
 import { SUGGEST_MAX_FILES } from '../src/shared/limits';
 
-test('suggest_context: returns empty message if query is blank', async () => {
+import { existsSync as flaskExists } from 'node:fs';
+// Tests against the Flask 3.1.3 clone (git-ignored) are skipped when it is not present (see docs/flask-setup.md)
+const NO_FLASK = !flaskExists(require('node:path').resolve(__dirname, '../dev/forge-spike/flask/src/flask')) && 'Flask 3.1.3 clone not found at dev/forge-spike/flask';
+
+test('suggest_context: returns empty message if query is blank', { skip: NO_FLASK }, async () => {
   resetBudget();
   const flaskRoot = path.resolve(__dirname, '../dev/forge-spike/flask');
   const res = await executeSuggestContext({ task: '' }, flaskRoot);
   assert.ok(res.includes('No keywords extracted'), 'Reports no keywords');
 });
 
-test('suggest_context: Task B instruction ranks cli.py, test_cli.py, and docs/cli.rst in top results', async () => {
+test('suggest_context: Task B instruction ranks cli.py, test_cli.py, and docs/cli.rst in top results', { skip: NO_FLASK }, async () => {
   resetBudget();
   const flaskRoot = path.resolve(__dirname, '../dev/forge-spike/flask');
   const taskPrompt =
