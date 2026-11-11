@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { startMcpServer, stopMcpServer } from './mcp/server';
 import { runContext } from './mcp/runContext';
 import { undoStore } from './apply/undoStore';
-import { setReviewPresenter } from './trueforge/runController';
+import { cancelRun, getRunState, setReviewPresenter } from './trueforge/runController';
 import { executeInlineEdit } from './inline/inlineEdit';
 import { AgentPanel } from './panel/agentPanel';
 import {
@@ -88,6 +88,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const openPanelCmd = vscode.commands.registerCommand('forgetrail.openPanel', () => {
     AgentPanel.createOrShow(context.extensionUri);
   });
+
+  // Cancel any active run (inline or agent); also bound to the status bar item while running
+  const cancelRunCmd = vscode.commands.registerCommand('forgetrail.cancelRun', async () => {
+    if (getRunState() === 'idle') {
+      vscode.window.showInformationMessage('ForgeTrail: no run is active.');
+      return;
+    }
+    await cancelRun();
+  });
+  context.subscriptions.push(cancelRunCmd);
 
   context.subscriptions.push(helloCmd);
   context.subscriptions.push(inlineEditCmd);

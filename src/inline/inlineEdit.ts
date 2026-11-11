@@ -2,6 +2,8 @@ import * as path from 'path';
 import { RunRequest } from '../shared/contracts';
 import { runContext } from '../mcp/runContext';
 import { runWithFallback } from '../fallback/runWithFallback';
+import { getRunState } from '../trueforge/runController';
+import { showBusyNotification, showSelectCodeNotification } from '../ui/notifications';
 
 function getVscode(): any {
   try {
@@ -35,7 +37,13 @@ export async function executeInlineEdit(): Promise<void> {
 
   const selection = editor.selection;
   if (selection.isEmpty) {
-    vscode.window.showWarningMessage('Select code first.');
+    showSelectCodeNotification();
+    return;
+  }
+
+  // C11: one run at a time; refuse here instead of letting the fallback policy retry a "busy" error
+  if (getRunState() !== 'idle') {
+    showBusyNotification();
     return;
   }
 
@@ -54,7 +62,11 @@ export async function executeInlineEdit(): Promise<void> {
 
   const selectedText = editor.document.getText(selection);
   const startLine = selection.start.line + 1; // 1-based
-  const endLine = selection.end.line + 1;
+  // A selection that ends at column 0 of the next line does not include that line
+  const endLine =
+    selection.end.character === 0 && selection.end.line > selection.start.line
+      ? selection.end.line
+      : selection.end.line + 1;
 
   const request: RunRequest = {
     kind: 'inline',
@@ -83,7 +95,11 @@ export async function executeInlineEdit(): Promise<void> {
     }
   } else if (result.status === 'cancelled') {
     vscode.window.showInformationMessage('ForgeTrail: run was cancelled.');
+  } else if (result.errorKind === 'no-fallback') {
+    // Already a complete user-facing sentence (S_NO_FALLBACK + short detail)
+    vscode.window.showErrorMessage(result.message);
   } else {
-    vscode.window.showErrorMessage(`ForgeTrail error: ${result.message}`);
+    const firstLine = (result.message || '').split(/\r?\n/)[0].slice(0, 200);
+    vscode.window.showErrorMessage(`ForgeTrail error: ${firstLine}`);
   }
 }

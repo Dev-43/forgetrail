@@ -64,6 +64,16 @@ export class RunContextManager {
     this.cancelled = true;
   }
 
+  /**
+   * Marks the run as over without forgetting what it did: clears the active run id and the
+   * inline selection region, but keeps appliedHunks (read for the result) and the cancelled
+   * flag (so a tool call still in flight after a cancel writes nothing). startRun() clears both.
+   */
+  public endRun(): void {
+    this.activeRunId = null;
+    this.selectionRegion = undefined;
+  }
+
   public reset(): void {
     this.activeRunId = null;
     this.cancelled = false;

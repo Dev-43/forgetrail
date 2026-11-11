@@ -56,6 +56,10 @@
       {
         "command": "forgetrail.openPanel",
         "title": "ForgeTrail: Open Agent Panel"
+      },
+      {
+        "command": "forgetrail.cancelRun",
+        "title": "ForgeTrail: Cancel Run"
       }
     ],
     "keybindings": [
@@ -64,6 +68,12 @@
         "key": "ctrl+alt+e",
         "mac": "cmd+alt+e",
         "when": "editorHasSelection"
+      },
+      {
+        "command": "forgetrail.inlineEdit",
+        "key": "ctrl+k e",
+        "mac": "cmd+k e",
+        "when": "editorTextFocus && editorHasSelection"
       },
       {
         "command": "forgetrail.review.accept",

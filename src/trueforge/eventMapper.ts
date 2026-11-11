@@ -1,4 +1,4 @@
-import { AgentEvent, ReviewRequest } from '../shared/contracts';
+import { AgentEvent } from '../shared/contracts';
 import { runContext } from '../mcp/runContext';
 import { estimateTokens } from '../mcp/budget';
 
@@ -83,14 +83,19 @@ export class EventMapper {
       });
     }
 
-    // Check PLAN: <step>
-    const planRegex = /(?:^|\n)\s*PLAN:\s*([^\n\r]+)/g;
+    // Check PLAN: <step> (only complete lines, so a step is not captured half-streamed)
+    const planRegex = /(?:^|\n)\s*PLAN:\s*([^\n\r]+)(?=\r?\n)/g;
     let planMatch: RegExpExecArray | null;
+    let newPlanStep = false;
     while ((planMatch = planRegex.exec(this.textBuffer)) !== null) {
       const step = planMatch[1].trim();
       if (!this.planSteps.includes(step) && this.planSteps.length < 6) {
         this.planSteps.push(step);
+        newPlanStep = true;
       }
+    }
+    if (newPlanStep) {
+      events.push({ type: 'plan.update', runId: this.runId, steps: [...this.planSteps] });
     }
 
     return events;
@@ -250,71 +255,17 @@ export class EventMapper {
       }
 
       case 'tool.approval_required': {
-        // Fallback context report before first review request if model omitted CONTEXT: lines
+        // Fallback context report before first review request if model omitted CONTEXT: lines.
+        // review.requested itself is emitted by the run controller after pre-approval validation,
+        // and only for edits that actually reach the review UI.
         events.push(...this.checkFallbackContextReport());
-
-        const tcs = raw.toolCalls ?? raw.tool_calls;
-        if (Array.isArray(tcs)) {
-          for (let i = 0; i < tcs.length; i++) {
-            const tc = tcs[i];
-            const callId = tc.id;
-            const pending = this.getPendingCall(callId);
-
-            // Construct ReviewRequest if tool call is propose_edit or propose_write
-            const args = pending?.args ?? {};
-
-            const request: ReviewRequest = {
-              id: callId,
-              runId: this.runId,
-              threadId,
-              path: args.path ?? 'unknown_file',
-              kind: args.old_text || args.oldText ? 'replace' : 'create',
-              oldText: args.old_text ?? args.oldText ?? '',
-              newText: args.new_text ?? args.newText ?? args.new_content ?? '',
-              startLine: args.start_line ?? args.startLine ?? 1,
-              endLine: args.end_line ?? args.endLine ?? 1,
-              reason: args.reason ?? '(no reason given)',
-              sources: Array.isArray(args.sources) ? args.sources : [],
-              index: i + 1,
-              total: tcs.length,
-              baseVersion: args.baseVersion ?? 0,
-            };
-
-            events.push({
-              type: 'review.requested',
-              request,
-            });
-          }
-        }
         break;
       }
 
       case 'turn.done': {
-        const status = raw.state?.status ?? 'done';
-        if (status === 'cancelled') {
-          events.push({
-            type: 'run.cancelled',
-            runId: this.runId,
-            applied: 0,
-            discarded: 0,
-          });
-        } else if (status === 'error') {
-          const errMsg = raw.state?.error?.message ?? raw.state?.error ?? '[Model Error] Unknown turn failure';
-          events.push({
-            type: 'run.error',
-            runId: this.runId,
-            kind: 'model',
-            message: String(errMsg),
-          });
-        } else {
-          const outputText = raw.state?.output?.content ?? '';
-          events.push({
-            type: 'run.finished',
-            runId: this.runId,
-            summary: typeof outputText === 'string' ? outputText.slice(0, 200) : 'Run completed',
-            applied: 0,
-          });
-        }
+        // Final run.finished / run.error / run.cancelled events are emitted by the run controller:
+        // a turn.done also arrives every time the loop pauses for an approval, which is not the end
+        // of the run. The controller reads the error text from state.message (state.error is unset).
         break;
       }
     }

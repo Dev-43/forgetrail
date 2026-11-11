@@ -80,6 +80,7 @@ export type AgentEvent =
   | { type: 'tool.started'; runId: string; threadId: string; toolName: string; argsSummary: string }
   | { type: 'tool.finished'; runId: string; toolName: string; ok: boolean; resultSummary: string }
   | { type: 'context.report'; runId: string; items: Array<{ path: string; reason: string; tokens: number }>; used: number; max: number }
+  | { type: 'plan.update'; runId: string; steps: string[] }
   | { type: 'budget.update'; runId: string; used: number; max: number }
   | { type: 'review.requested'; request: ReviewRequest }
   | { type: 'review.resolved'; id: string; decision: 'accept' | 'reject' }
@@ -110,6 +111,8 @@ export interface RunResult {
   errorKind?: 'model' | 'tool' | 'network' | 'no-fallback' | 'tool-mismatch' | 'no-edit' | 'region';
   message: string;
   appliedCount: number;
+  /** One line per applied hunk (`<path> lines <s>-<e> — <reason>`); fed to the fallback as ALREADY APPLIED. */
+  appliedSummaries?: string[];
 }
 
 // C11 — Run State Machine

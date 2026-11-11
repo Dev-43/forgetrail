@@ -13,6 +13,7 @@ import {
   D_NOT_FOUND,
   D_OUTSIDE_REGION,
   D_USER,
+  E_FILE_EXISTS,
 } from '../shared/contracts';
 import { AUTO_DENY_LIMIT_PER_FILE } from '../shared/limits';
 import { runContext } from '../mcp/runContext';
@@ -21,6 +22,27 @@ import { isCommandAutoAllowed, killActiveCommand } from '../mcp/tools/runCommand
 import { createSession, sendTurn, sendApprovals, ToolApprovalInput, cancelSession, getTrueForgeUrl } from './client';
 import { EventMapper } from './eventMapper';
 
+/**
+ * Returns the current version of the open editor document for a workspace path,
+ * or 0 if the file is not open (or when running headless without VS Code).
+ * Used as ReviewRequest.baseVersion so the presenter's staleness check compares
+ * against the version the proposal was validated on, not a constant 0.
+ */
+function openDocumentVersion(relPath: string, workspaceRoot: string): number {
+  try {
+    const vscode = require('vscode');
+    const guard = validateWorkspacePath(relPath, workspaceRoot);
+    if (!guard.ok || !guard.absolutePath) return 0;
+    const target = guard.absolutePath.replace(/\\/g, '/').toLowerCase();
+    const doc = vscode.workspace.textDocuments.find(
+      (d: any) => d.uri.fsPath.replace(/\\/g, '/').toLowerCase() === target
+    );
+    return doc ? doc.version : 0;
+  } catch {
+    return 0;
+  }
+}
+
 type EventListener = (event: AgentEvent) => void;
 const listeners = new Set<EventListener>();
 
@@ -28,6 +50,11 @@ let currentState: RunState = 'idle';
 let currentRunId: string | null = null;
 let currentSessionId: string | null = null;
 let activePresenter: ReviewPresenter | null = null;
+/** Run id that cancelRun() was called for; executeRun checks this instead of runContext.cancelled,
+ * because a new run may already have reset runContext by the time the old loop wakes up. */
+let cancelRequestedRunId: string | null = null;
+/** Proposals in the current approval batch that have not been decided yet (reported as "discarded" on cancel). */
+let undecidedProposals = 0;
 
 export function getRunState(): RunState {
   return currentState;
@@ -81,7 +108,15 @@ function validateProposal(request: ReviewRequest, workspaceRoot: string): string
     return D_FORMAT;
   }
 
+  // M5: use the normalised workspace-relative path from here on
+  request.path = guard.relativePath!;
   const absPath = guard.absolutePath!;
+
+  // Inline mode: every edit must be in the selected file
+  if (runContext.selectionRegion && runContext.selectionRegion.path !== request.path) {
+    return D_OUTSIDE_REGION(runContext.selectionRegion.startLine, runContext.selectionRegion.endLine);
+  }
+
   if (request.kind === 'replace') {
     if (!fs.existsSync(absPath)) {
       return D_NOT_FOUND(request.path);
@@ -118,11 +153,39 @@ function validateProposal(request: ReviewRequest, workspaceRoot: string): string
       }
     }
   } else {
+    // A create must never overwrite an existing file
+    if (fs.existsSync(absPath)) {
+      return E_FILE_EXISTS(request.path);
+    }
     request.startLine = 1;
     request.endLine = request.newText.split('\n').length;
   }
 
   return null;
+}
+
+/**
+ * Builds the deny reason sent back to TrueForge. Automatic rejections (REJECTED_AUTO / ERROR)
+ * are passed through as-is so the model is not told that the user rejected them.
+ */
+function denyReason(feedback?: string): string {
+  if (feedback && /^(REJECTED_AUTO|ERROR )/.test(feedback)) {
+    return feedback;
+  }
+  return D_USER(feedback);
+}
+
+/** Maps RunResult error kinds onto the C8 run.error kinds. */
+function toEventErrorKind(kind: RunResult['errorKind']): 'model' | 'tool' | 'network' | 'no-fallback' | 'no-edit' {
+  switch (kind) {
+    case 'model':
+    case 'network':
+    case 'no-fallback':
+    case 'no-edit':
+      return kind;
+    default:
+      return 'tool';
+  }
 }
 
 /**
@@ -134,6 +197,7 @@ export async function cancelRun(): Promise<void> {
   }
 
   currentState = 'cancelling';
+  cancelRequestedRunId = currentRunId;
   runContext.cancel();
 
   // Terminate any running child process tree immediately (C-19)
@@ -142,6 +206,11 @@ export async function cancelRun(): Promise<void> {
   } catch (err) {
     console.error('Error killing active command on cancel:', err);
   }
+
+  // Count before dispose(): dispose resolves the open review(s) as rejected
+  const discardedCount = undecidedProposals;
+  const appliedCount = runContext.appliedHunks.length;
+  const cancelledRunId = currentRunId ?? 'unknown';
 
   if (activePresenter && currentRunId) {
     try {
@@ -159,15 +228,17 @@ export async function cancelRun(): Promise<void> {
     }
   }
 
-  const discardedCount = runContext.appliedHunks.length;
   emitEvent({
     type: 'run.cancelled',
-    runId: currentRunId ?? 'unknown',
-    applied: runContext.appliedHunks.length,
+    runId: cancelledRunId,
+    applied: appliedCount,
     discarded: discardedCount,
   });
 
-  runContext.reset();
+  // Keep runContext.cancelled = true so any tool call still in flight writes nothing;
+  // the next startRun() clears it.
+  runContext.endRun();
+  undecidedProposals = 0;
   currentRunId = null;
   currentSessionId = null;
   currentState = 'idle';
@@ -194,6 +265,11 @@ export async function executeRun(
   const runId = randomUUID();
   currentRunId = runId;
   currentState = 'running';
+  cancelRequestedRunId = null;
+  undecidedProposals = 0;
+  const isCancelled = (): boolean => cancelRequestedRunId === runId;
+  let proposalCount = 0;
+  let lastOutput = '';
 
   // Initialize runContext
   runContext.startRun(runId, request.workspaceRoot, request.selection);
@@ -215,7 +291,7 @@ export async function executeRun(
     currentState = 'idle';
     currentRunId = null;
     currentSessionId = null;
-    runContext.reset();
+    runContext.endRun();
 
     const errMsg = err?.message ?? String(err);
     emitEvent({
@@ -252,14 +328,14 @@ export async function executeRun(
     // Turn processing loop
     let keepRunning = true;
     while (keepRunning) {
-      if (runContext.cancelled) {
+      if (isCancelled()) {
         break;
       }
 
       let pendingApprovalEvent: any = null;
 
       for await (const chunk of stream) {
-        if (runContext.cancelled) {
+        if (isCancelled()) {
           break;
         }
 
@@ -286,14 +362,20 @@ export async function executeRun(
           } else if (status === 'cancelled') {
             finalStatus = 'cancelled';
             finalMessage = 'Turn cancelled';
+          } else {
+            const out = rawEvent.state?.output?.content ?? rawEvent.state?.output;
+            if (typeof out === 'string' && out.trim()) {
+              lastOutput = out.trim();
+            }
           }
         }
       }
 
       // If an approval is required, pause, resolve, and resume turn
-      if (pendingApprovalEvent && !runContext.cancelled && finalStatus !== 'error') {
+      if (pendingApprovalEvent && !isCancelled() && finalStatus !== 'error') {
         currentState = 'awaiting_review';
         const tcs = pendingApprovalEvent.toolCalls ?? pendingApprovalEvent.tool_calls ?? [];
+        undecidedProposals = tcs.length;
         const threadId = pendingApprovalEvent.threadId ?? pendingApprovalEvent.thread_id ?? 'main';
         const approvalsToSend: ToolApprovalInput[] = [];
 
@@ -301,6 +383,9 @@ export async function executeRun(
         let sessionEventsData: any[] | null = null;
 
         for (let i = 0; i < tcs.length; i++) {
+          if (isCancelled()) {
+            break;
+          }
           const tc = tcs[i];
           const callId = tc?.id;
           const sourceEventId = tc?.sourceEventId ?? tc?.source_event_id;
@@ -379,7 +464,9 @@ export async function executeRun(
                 });
               }
             }
+            undecidedProposals = Math.max(0, undecidedProposals - 1);
           } else {
+            proposalCount++;
             // propose_edit / propose_write
             const reviewReq: ReviewRequest = {
               id: callId,
@@ -399,6 +486,7 @@ export async function executeRun(
             };
 
             const denialReason = validateProposal(reviewReq, request.workspaceRoot);
+            reviewReq.baseVersion = openDocumentVersion(reviewReq.path, request.workspaceRoot);
             let decision: ReviewDecision;
 
             if (denialReason) {
@@ -413,24 +501,30 @@ export async function executeRun(
             } else if (activePresenter) {
               emitEvent({ type: 'review.requested', request: reviewReq });
               decision = await activePresenter.present(reviewReq);
+              if (isCancelled()) {
+                break;
+              }
               emitEvent({ type: 'review.resolved', id: callId, decision: decision.decision });
             } else {
               decision = { id: callId, decision: 'accept' };
             }
+            undecidedProposals = Math.max(0, undecidedProposals - 1);
 
             approvalsToSend.push({
               threadId,
               toolCallId: callId,
               decision: decision.decision === 'accept' ? 'allow' : 'deny',
-              reason: decision.decision === 'reject' ? (decision.feedback ? D_USER(decision.feedback) : D_USER()) : undefined,
+              reason: decision.decision === 'reject' ? denyReason(decision.feedback) : undefined,
             });
           }
         }
 
-        currentState = 'running';
+        if (!isCancelled()) {
+          currentState = 'running';
+        }
 
         // Step 2: Resume TrueForge turn with all collected decisions
-        if (!runContext.cancelled && keepRunning) {
+        if (!isCancelled() && keepRunning) {
           stream = await sendApprovals(sessionCreatedId, approvalsToSend);
         } else {
           keepRunning = false;
@@ -446,8 +540,25 @@ export async function executeRun(
     errorKind = finalMessage.includes('401') ? 'model' : 'network';
   }
 
-  // Cleanup
-  currentState = 'finishing';
+  // A cancelled run always reports cancelled, whatever the stream said last
+  if (isCancelled()) {
+    finalStatus = 'cancelled';
+    errorKind = undefined;
+    finalMessage = 'Run was cancelled';
+  }
+
+  // M7: an inline run that ends without proposing anything is a failure, retried by the fallback policy
+  if (finalStatus === 'done' && request.kind === 'inline' && proposalCount === 0) {
+    finalStatus = 'error';
+    errorKind = 'no-edit';
+    finalMessage = 'Inline run finished with zero proposals (no edits proposed).';
+  }
+
+  // Cleanup (skip the shared state if cancelRun() already released it, or a new run owns it)
+  const ownsState = currentRunId === runId;
+  if (ownsState) {
+    currentState = 'finishing';
+  }
   if (activePresenter) {
     try {
       activePresenter.dispose(runId);
@@ -456,16 +567,34 @@ export async function executeRun(
     }
   }
 
-  const appliedCount = runContext.appliedHunks.length;
-  currentRunId = null;
-  currentSessionId = null;
-  currentState = 'idle';
+  // runContext still holds this run's hunks unless a newer run has already started
+  const ownHunks = runContext.activeRunId === runId || runContext.activeRunId === null ? runContext.appliedHunks : [];
+  const appliedCount = ownHunks.length;
+  const appliedSummaries = ownHunks.map(
+    (h) => `${h.path} lines ${h.startLine}-${h.endLine} — ${h.reason}`
+  );
+
+  // Final C8 event for this attempt (cancelRun() already emitted run.cancelled)
+  if (finalStatus === 'done') {
+    emitEvent({ type: 'run.finished', runId, summary: lastOutput.slice(0, 200) || 'Run completed', applied: appliedCount });
+  } else if (finalStatus === 'error') {
+    emitEvent({ type: 'run.error', runId, kind: toEventErrorKind(errorKind), message: finalMessage });
+  }
+
+  if (ownsState) {
+    runContext.endRun();
+    undecidedProposals = 0;
+    currentRunId = null;
+    currentSessionId = null;
+    currentState = 'idle';
+  }
 
   return {
     status: finalStatus,
     errorKind,
     message: finalMessage,
     appliedCount,
+    appliedSummaries,
   };
 }
 

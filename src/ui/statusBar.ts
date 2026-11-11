@@ -37,16 +37,16 @@ export class StatusBarManager {
         this.activeModel = event.agentName;
         this.switchedMessage = null;
         this.pendingReviewsCount = 0;
-        this.item.command = undefined;
+        this.item.command = 'forgetrail.cancelRun';
         this.item.text = `$(sync~spin) ${S_RUNNING(this.activeModel)}`;
-        this.item.tooltip = 'ForgeTrail run in progress';
+        this.item.tooltip = 'ForgeTrail run in progress — click to cancel';
         this.item.show();
         break;
 
       case 'model.switched':
         this.switchedMessage = S_SWITCHED(event.from, event.to);
         this.activeModel = event.to;
-        this.item.command = undefined;
+        this.item.command = 'forgetrail.cancelRun';
         this.item.text = `$(arrow-swap) ${this.switchedMessage}`;
         this.item.tooltip = `Model switched from ${event.from} to ${event.to}: ${event.reason}`;
         this.item.show();
@@ -68,7 +68,7 @@ export class StatusBarManager {
           this.item.command = 'forgetrail.review.show';
           this.item.text = `$(git-pull-request) ${S_REVIEW(this.pendingReviewsCount)}`;
         } else {
-          this.item.command = undefined;
+          this.item.command = 'forgetrail.cancelRun';
           if (this.switchedMessage) {
             this.item.text = `$(arrow-swap) ${this.switchedMessage}`;
           } else if (this.activeModel) {
