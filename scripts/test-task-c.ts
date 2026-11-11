@@ -28,9 +28,13 @@ async function runTaskCCase1(): Promise<boolean> {
   console.log('Task C - Case 1: --break-primary (fallback enabled)');
   console.log('========================================');
 
-  // 1. Reset Flask and setup with break-primary
+  // 1. Reset Flask and setup with break-primary before starting in-process server
   execSync('npm run reset:flask', { stdio: 'inherit' });
   execSync('npm run setup -- --break-primary', { stdio: 'inherit' });
+
+  // 2. Start MCP server for the run
+  runContext.setWorkspaceRoot(flaskDir);
+  await startMcpServer(3333, '127.0.0.1');
 
   let switchedModel = false;
   const unsub = runController.subscribe((ev) => {
@@ -56,9 +60,14 @@ async function runTaskCCase1(): Promise<boolean> {
   };
 
   const startTime = Date.now();
-  const result = await runWithFallback(request);
+  let result;
+  try {
+    result = await runWithFallback(request);
+  } finally {
+    unsub.dispose();
+    await stopMcpServer().catch(() => {});
+  }
   const duration = Date.now() - startTime;
-  unsub.dispose();
 
   console.log(`Case 1 finished in ${duration}ms with status: ${result.status}`);
 
@@ -79,9 +88,13 @@ async function runTaskCCase2(): Promise<boolean> {
   console.log('Task C - Case 2: --break-primary --no-fallback');
   console.log('========================================');
 
-  // 1. Reset Flask and setup with break-primary and no-fallback
+  // 1. Reset Flask and setup with break-primary and no-fallback before in-process server
   execSync('npm run reset:flask', { stdio: 'inherit' });
   execSync('npm run setup -- --break-primary --no-fallback', { stdio: 'inherit' });
+
+  // 2. Start MCP server for the run
+  runContext.setWorkspaceRoot(flaskDir);
+  await startMcpServer(3333, '127.0.0.1');
 
   const request: RunRequest = {
     kind: 'inline',
@@ -96,7 +109,12 @@ async function runTaskCCase2(): Promise<boolean> {
   };
 
   const startTime = Date.now();
-  const result = await runWithFallback(request);
+  let result;
+  try {
+    result = await runWithFallback(request);
+  } finally {
+    await stopMcpServer().catch(() => {});
+  }
   const duration = Date.now() - startTime;
 
   console.log(`Case 2 finished in ${duration}ms with status: ${result.status}, errorKind: ${result.errorKind}`);
@@ -126,21 +144,6 @@ async function runTaskCCase2(): Promise<boolean> {
 async function main() {
   console.log('Starting Milestone M3 Task C Verification Runner...');
 
-  // Start local MCP server
-  let startedMcp = false;
-  try {
-    const health = await fetch('http://127.0.0.1:3333/health').catch(() => null);
-    if (!health || !health.ok) {
-      runContext.setWorkspaceRoot(flaskDir);
-      await startMcpServer(3333, '127.0.0.1');
-      startedMcp = true;
-    }
-  } catch {
-    runContext.setWorkspaceRoot(flaskDir);
-    await startMcpServer(3333, '127.0.0.1');
-    startedMcp = true;
-  }
-
   let case1Passed = false;
   let case2Passed = false;
 
@@ -154,10 +157,6 @@ async function main() {
       execSync('npm run setup -- --restore', { stdio: 'inherit' });
     } catch (err: any) {
       console.warn(`Warning during restore: ${err.message}`);
-    }
-
-    if (startedMcp) {
-      await stopMcpServer().catch(() => {});
     }
   }
 

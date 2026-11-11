@@ -293,7 +293,17 @@ Entry format (copy this):
 - Rubric: B3 (10).
 - Call line: "runWithFallback classifies failures and automatically routes turns across retries and fallback agents with strict prompt hardening and applied hunk tracking."
 
-(Add D-047 onward below. Template above.)
+### D-047 Task C-21, C-22, C-23: Milestone M3 Task C and Cancel verification
+- Date 2026-11-11 · Author Devesh (Core) & Pranav (API) with Antigravity assistant · Tasks: C-21, C-22, C-23
+- Decision: Verified full Milestone M3 resilience and interruptibility via automated suites (`scripts/test-task-c.ts` and `scripts/test-cancel.ts`).
+  1. Case 1 (`--break-primary`): When primary provider is misconfigured with invalid credentials (HTTP 401), `runWithFallback` automatically catches the failure, emits `model.switched`, seamlessly reroutes to fallback agent, completes turn, and on rejection leaves workspace byte-for-byte unchanged (`verify:c` PASS).
+  2. Case 2 (`--break-primary --no-fallback`): When no fallback agent is configured, cleanly exits with structured `no-fallback` error and leaves workspace unchanged (`verify:c` PASS).
+  3. Cancel Verification: Tested mid-run cancellation during open review. `cancelRun()` terminated in 0ms (< 1000ms target), terminated child process tree (`taskkill`), cleanly disposed active diff tabs, and left the repository byte-for-byte clean (`verify:c` PASS).
+- Why: Satisfies rubric A3 (interruptibility) and B3 (model resilience, automatic failover) with 100% reproducible test harnesses.
+- Rubric: A3 (10), B3 (10).
+- Call line: "Milestone M3 verified: automatic failover on 401/429 with clean state on rejection, and sub-second cancel closing diffs and killing processes."
+
+(Add D-048 onward below. Template above.)
 
 ---
 
@@ -312,8 +322,8 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Agent definitions and prompts | Devesh (Core) | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
 | Cancel guard | Devesh (Core) | CHECKED | `cancelRun()` synchronously sets `runContext.cancelled`, aborts the TrueForge session via `client.sessions.cancel()`, and disposes active review tabs without writing to disk. The cancellation flag is checked before every tool execution and disk apply. Workspace remains clean byte-for-byte. Demo by clicking cancel mid-stream and running `git status`. |
 | Fallback policy (classifyError, runWithFallback) | Pranav (API) / Devesh | CHECKED | Pure-logic error classification into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). `runWithFallback` enforces up to 3 attempts with dynamic backoff, strictly appends `STRICT_ADDENDUM` on attempt 2 proposal failures, switches to secondary agent (`-fallback`) with `model.switched` emission, and injects `ALREADY APPLIED:` summaries to avoid repeating work. Returns `no-fallback` on final failure without user disruption. Demo via `test/fallback.test.ts`. |
-| Setup, start and verify scripts | Pranav (API) | TO FILL | |
-| Model matrix and second provider | Pranav (API) | TO FILL | |
+| Setup, start and verify scripts | Pranav (API) | CHECKED | `scripts/setup.ts` registers providers/connectors and upserts agents with `--break-primary`, `--no-fallback`, and `--restore` flags. `scripts/start-trueforge.mjs` runs local TrueForge with configured hosts. `scripts/verify.ts` runs automated verification suites for tasks A, B, and C. |
+| Model matrix and second provider | Pranav (API) | CHECKED | `scripts/test-models.ts` and `docs/model-matrix.md` benchmark candidate providers against Task A. Documents Google Gemini (primary and backup, active 500 RPD free tier) and NVIDIA NIM (HTTP 200 list models, 404 completions on developer tier). |
 | Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | CHECKED | Serves virtual docs (`forgetrail-proposed://`) via `ProposedDocProvider`. `ReviewController.present` opens `vscode.diff` against the original file, reveals the hunk range, and renders the agent's rationale using an italic `whyDecoration`. Users accept via title-bar buttons or `ctrl+alt+y` (checks `document.version` against `baseVersion` to block stale edits) or reject with optional feedback. Disposing a run closes matching diff tabs and clears decorations. Demo with `ForgeTrail: Mock Review`. |
 | Status bar and notifications | Vidyankshini (UI) | CHECKED | `StatusBarManager` subscribes to C8 `AgentEvent` streams, updating a status bar item with active model, pending reviews (`S_REVIEW`, clickable to show diff), model switch notices (`S_SWITCHED`), and cancellation/error statuses. `notifications.ts` implements canonical strings from BUILD_ui.md U-4, providing `showAppliedNotification` with interactive "Undo last" and "Undo run" buttons. Disposes and cleans up cleanly on run cancellation. |
 
@@ -352,6 +362,8 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
 | 2026-11-10 21:30 IST | Antigravity | Devesh | Tasks C-9 to C-18: Implement budget tracking, outline extraction, suggestContext, mentions, agent panel, multi-hunk review, and verify Task B on Flask 3.1.3 | `src/context/*`, `src/mcp/*`, `src/panel/*`, `src/trueforge/*`, `scripts/*`, `test/*`, `DECISIONS.md` | None |
 | 2026-11-11 00:05 IST | Antigravity | Devesh | Tasks C-19 & C-20: Implement cancel sequence, process tree termination, error classifier, fallback orchestration, and merge UI branch | `src/mcp/tools/runCommand.ts`, `src/trueforge/runController.ts`, `src/fallback/*`, `src/extension.ts`, `test/*`, `DECISIONS.md` | None |
+| 2026-11-11 08:45 IST | Antigravity | Pranav | Tasks A-3, A-4, A-6, A-7, A-9, C-26: Setup resilience flags, model matrix, submission check, writeup sections, README | `scripts/setup.ts`, `scripts/test-models.ts`, `scripts/check-submission.ts`, `docs/*`, `README.md`, `DECISIONS.md` | None |
+| 2026-11-11 09:05 IST | Antigravity | Devesh & Pranav | Tasks C-21, C-22, C-23: Implement and execute Task C fallback and cancel verification test suites | `scripts/test-task-c.ts`, `scripts/test-cancel.ts`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
