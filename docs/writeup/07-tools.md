@@ -17,4 +17,4 @@ In accordance with rule R4 and competition guidelines, all software tools, runti
 ### 3. AI Coding Assistants (Full Disclosure)
 - **Claude (Anthropic)**: Utilized during initial project inception (M0) for architectural scoping, requirements mapping, and contracts formalization in `DECISIONS.md` (`D-001`).
 - **Antigravity (Google DeepMind)**: Primary autonomous and pair-programming AI coding assistant utilized across Milestones M0, M1, M2, M3, and M4 for codebase implementation, MCP tool integration, native diff review wiring, resilience policies, and automated verification suites.
-  - Every single AI execution turn, instructions received, files touched, and UNCLEAR checkpoints were logged in real-time in [DECISIONS.md](file:///d:/IIT_bombay/DECISIONS.md) Part 5 ("Agent log").
+  - Every single AI execution turn, instructions received, files touched, and UNCLEAR checkpoints were logged in real-time in [DECISIONS.md](../../DECISIONS.md) Part 5 ("Agent log").

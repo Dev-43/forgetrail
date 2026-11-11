@@ -48,7 +48,7 @@ graph TD
 
     subgraph Model Providers
         Primary[Google Gemini / Primary Model]
-        Secondary[Google Gemini Backup / Secondary Model]
+        Secondary[Fallback models: Groq / NVIDIA]
     end
 
     Panel -->|instruction| RC
@@ -96,51 +96,45 @@ Both inject blocks under `ATTACHED CONTEXT` and display in the panel's "Context 
 
 ## 5. Model Setup
 
-### Models Used & Evaluation Matrix
+### Models used
 
-| Role | Provider & Model Identifier | Hosting / Infrastructure | Cost | Rate Limits & Quotas | Observed Behavior |
-|---|---|---|---|---|---|
-| **Primary Model** | `google-gemini/gemini-2.5-flash` | Google AI Studio cloud endpoints | Free Tier ($0.00) | 15 RPM, 250k TPM, 500 RPD | Fast turn latency (< 3s), reliable multi-file hunk formatting, respects tool calling schemas. |
-| **Fallback Model** | `google-gemini/gemini-2.0-flash` (backup key) | Google AI Studio cloud endpoints | Free Tier ($0.00) | 15 RPM, 250k TPM, 500 RPD | Immediate failover target when primary key hits 429 quota exhaustion or 401 auth failure. |
-| **Candidate Provider** | `nvidia/meta/llama-3.1-70b-instruct` | NVIDIA NIM Developer Cloud | Free Tier ($0.00) | 5000 credits | `GET /v1/models` returns HTTP 200, but developer tier returns HTTP 404 Function Not Found on completion routes. |
+All models are configured in TrueForge (catalog provider or OpenAI-compatible endpoint) by `npm run setup` from `config/models.json`; the extension never calls a provider.
 
-*Total LLM inference expenditure during entire build, test, and verification phases: **$0.00**.*
+| Role (agent) | Model | Where it runs | Cost |
+|---|---|---|---|
+| Primary, inline + agent mode (`forgetrail-*-primary`) | `google-gemini/gemini-3-6-flash` | Google AI Studio, free tier | $0.00 |
+| Inline fallback (`forgetrail-inline-fallback`) | `qwen/qwen3.8-27b` | Groq, OpenAI-compatible endpoint, free tier | $0.00 |
+| Agent-mode fallback (`forgetrail-agent-fallback`) | `mistralai/mistral-large-4-1t-a52b` | NVIDIA build.nvidia.com, OpenAI-compatible endpoint, free credits | $0.00 |
+| Used during development | `google-gemini/gemini-3-1-flash-lite` | Google AI Studio, free tier | $0.00 |
 
-### The 60-Second Model Swap Procedure
+Model probe on 2026-11-11 (plain reply + one `read_file` tool call through TrueForge): `gemini-3-5-flash-lite`, `gemini-3-5-flash`, `gemini-3-6-flash` and `gemini-flash-lite-latest` passed in 2–10 s; `gemini-3-7-flash` hit TrueForge's 20 s header timeout; `gemini-3-8-flash` returned 503 (high demand); `gemini-3-1-flash-lite`, `gemini-flash-latest` and `gemini-3-1-pro-preview` returned 429 (free-tier quota). On Groq, `llama-3.3-70b-versatile` is no longer offered and `openai/gpt-oss-120b` fails in TrueForge on multi-turn requests (`reasoning_content` rejected), so `qwen/qwen3.8-27b` is used.
 
-Per architectural rule R11, ForgeTrail contains **zero model names or provider strings** inside `src/`. Switching models is completely configuration-driven:
+*Total inference cost across build and testing: $0.00 (free tiers only).*
 
-1. **Add Key to `.env`**:
-   ```env
-   NEW_PROVIDER_API_KEY=your_key_here
-   ```
-2. **Register Provider in `config/models.json`**:
-   Add the provider catalog configuration with endpoint URL and model identifiers.
-3. **Execute Setup CLI**:
-   ```bash
-   npm run setup -- --primary provider-name/model-name
-   ```
-4. **Verification**:
-   `setup.ts` automatically contacts TrueForge, registers the provider, upserts the primary agent definition, and runs `smoke-primary`. Once `PASS smoke-primary` appears, the model is fully active.
+### How a user switches models
+
+1. Put the provider's key in `.env` (any variable name).
+2. In `config/models.json`, add or edit an entry in `providers` (`builtin` for a TrueForge catalog provider; `openai-compatible` with `baseUrl` and the model ids otherwise) and point `models.primary` / `models.fallback` / `models.agentFallback` at `<provider>/<model id>`.
+3. Run `npm run setup` (or, without editing the file, `npm run setup -- --primary <provider>/<model id>`). Setup registers the providers, creates the four agents and prints `PASS smoke-primary` / `PASS smoke-fallback` when both models answer.
 
 ---
 
 ## 6. Scorecard
 
-### Benchmark Runs on Flask 3.1.3 (`dev/forge-spike/flask`)
+One row per judging criterion. **Timestamps are the planned positions from the demo script (INTEGRATION.md section 5) and must be replaced with the real ones after recording.**
 
-| Milestone / Task | Run / Iteration | Wall Time | Touched Files | Verification Status | Clean Undo Status | Evidence / Log File |
-|---|---|---|---|---|---|---|
-| **M1: Task A** | Iteration 1 | 42.1s | 1 file (`helpers.py`) | PASS (`get_debug_flag()` = False) | PASS (`verify:c` clean) | `task-1520.log` |
-| **M1: Task A** | Iteration 2 | 38.6s | 1 file (`helpers.py`) | PASS (`get_debug_flag()` = False) | PASS (`verify:c` clean) | `task-1520.log` |
-| **M1: Task A** | Iteration 3 | 41.2s | 1 file (`helpers.py`) | PASS (`get_debug_flag()` = False) | PASS (`verify:c` clean) | `task-1520.log` |
-| **M2: Task B** | Run 1 (task-1863) | 362.4s | 3 files (`cli.py`, `test_cli.py`, `cli.rst`) | PASS (all 4 criteria) | PASS (reverted 5 hunks) | `task-1863.log` |
-| **M2: Task B** | Run 2 (task-2611) | 274.3s | 4 files (`cli.py`, `test_cli.py`, `cli.rst`, `api.rst`) | PASS (all 4 criteria) | PASS (reverted 5 hunks) | `task-2611.log` |
-| **M3: Task C** | Case 1 (`--break-primary`) | ~8.4s | 0 files | PASS (switched to fallback, clean on rejection) | PASS (`verify:c` clean) | `scripts/test-task-c.ts` |
-| **M3: Task C** | Case 2 (`--no-fallback`) | ~3.2s | 0 files | PASS (clean error within 10s) | PASS (`verify:c` clean) | `scripts/test-task-c.ts` |
-| **M3: Cancel** | Cancel mid-stream | < 100ms | 0 files | PASS (process killed, tabs closed) | PASS (`verify:c` clean) | `scripts/test-cancel.ts` |
-
-All acceptance criteria met across repeated consecutive benchmark runs.
+| Criterion | Video timestamp | Claim |
+|---|---|---|
+| Gate | 2:35 (TODO) | Loop runs on TrueForge 0.184.2 in local mode; editor tools are MCP tools on `127.0.0.1:3333`; Task B session shown; agent definitions in `agents/`. |
+| A1 Inline edit | 0:08 (TODO) | Selection + keybinding + instruction gives a native diff per hunk with Accept/Reject buttons. |
+| A2 Agent mode | 1:05 (TODO) | One panel request makes the agent find and edit 3+ files it was not told about (Task B). |
+| A3 Streaming + cancel | 3:25 (TODO) | Text streams into the panel; Stop cancels immediately and `git status` shows no half-applied hunk. |
+| B1 Context assembly | 1:05 (TODO) | `suggest_context` / `repo_outline` under a 12,000-token budget; the "Context chosen" card shows files and reasons before the first hunk. |
+| B2 Diff safety | 0:55 (TODO) | Each hunk is reviewed in the diff editor; Undo restores the file and `git status` is clean. |
+| B3 Resilience | 2:45 (TODO) | With the primary key broken, the status bar shows the switch and the fallback model's diff appears with no user action; workspace unchanged. |
+| B4 TrueForge depth | 2:35 (TODO) | TrueForge tool approval drives the review; deferred tool loading (`forgetrail-extra`) and sub-agents visible in the session. |
+| C1 Video | whole video | Tasks A, B, C in order, each verified on screen (`verify:a`, `verify:b`, `verify:c`). |
+| C2 Write-up | — | This document. |
 
 ---
 
@@ -163,24 +157,23 @@ In accordance with rule R4 and competition guidelines, all software tools, runti
 ### 3. AI Coding Assistants (Full Disclosure)
 - **Claude (Anthropic)**: Utilized during initial project inception (M0) for architectural scoping, requirements mapping, and contracts formalization in `DECISIONS.md` (`D-001`).
 - **Antigravity (Google DeepMind)**: Primary autonomous and pair-programming AI coding assistant utilized across Milestones M0, M1, M2, M3, and M4 for codebase implementation, MCP tool integration, native diff review wiring, resilience policies, and automated verification suites.
-  - Every single AI execution turn, instructions received, files touched, and UNCLEAR checkpoints were logged in real-time in [DECISIONS.md](file:///d:/IIT_bombay/DECISIONS.md) Part 5 ("Agent log").
+  - Every single AI execution turn, instructions received, files touched, and UNCLEAR checkpoints were logged in real-time in [DECISIONS.md](../../DECISIONS.md) Part 5 ("Agent log").
 
 ---
 
 ## 8. Known Limitations
 
-The following limitations are explicitly documented and backed by logged spike evidence:
+1. **Free-tier quotas decide Task B.** Task B needs roughly 20–40 model requests. On free tiers the primary runs out of quota or gets 429/503 mid-run; ForgeTrail then backs off and fails over, but a run can still end without finishing. Tool calls are paced at 4.5 s (`MIN_TOOL_INTERVAL_MS` in `src/mcp/server.ts`) to stay under per-minute limits.
+2. **20 s model header timeout.** TrueForge 0.184.2 local mode gives a model 20 s to start answering; slower models (observed with `gemini-3-7-flash`) fail and are treated as transient errors.
+3. **Model quality still matters for Task B.** In testing, a model produced a `flask config` command that crashed on non-JSON config values (`timedelta`) and still reported "done". ForgeTrail shows every hunk for review but does not itself run the tests before the agent finishes.
+4. **Single active run.** One run at a time; the budget and cancel flag belong to the active run because MCP calls carry no TrueForge session id.
+5. **Regex outlines only for Python, TypeScript and JavaScript.** Other files are found by `search_workspace` and content scoring in `suggest_context`, but get no symbol outline.
+6. **No sandbox on Windows.** TrueForge's local sandbox supports Linux and macOS only; `run_command` runs as a child process in the workspace, auto-allowing only plain `pytest` / `git status` / `git diff` commands and asking for everything else.
 
-1. **Free-Tier RPM & TPM Rate Quotas**:
-   - Google AI Studio enforces 15 requests per minute (RPM) and 250,000 tokens per minute (TPM).
-   - Rapid multi-turn MCP loops can trigger 429 errors without rate pacing. ForgeTrail mitigates this by enforcing `MIN_TOOL_INTERVAL_MS = 4500` (<= 13.3 RPM) in `src/mcp/server.ts`.
-2. **TrueForge Standalone 20s Model Header Timeout**:
-   - In TrueForge 0.184.2 local standalone mode, the HTTP client timeout for receiving initial response headers is fixed at 20 seconds. Heavy reasoning models (e.g. OpenAI o1 or deep thinking variants) can exceed this limit on large turns.
-3. **NVIDIA NIM 404 Function Routes**:
-   - Live developer keys from `build.nvidia.com` return HTTP 404 Function Not Found on general accounts.
-4. **Single Active Run Concurrency**:
-   - ForgeTrail deliberately locks the extension to one active run (`currentState !== 'idle'`) to prevent interleaved file modifications and state corruption.
-5. **Regex Symbol Outline Scope**:
-   - In-memory regex definition extractors support Python, TypeScript, and JavaScript. Other languages fall back to line-bracketed lexical chunks.
-6. **Windows Local Sandbox Fallback**:
-   - TrueForge's `LocalSandboxProvider` supports Linux and macOS container isolation; on Windows, commands execute in child processes gated by pathGuard and auto-allowlists.
+### What we would do with another month
+
+- Run the tests (`run_command`) automatically before a run may finish, and feed failures back to the agent.
+- Keep the conversation when failing over mid-run instead of restarting on the fallback agent with an "already applied" list.
+- Tree-sitter outlines for more languages and an optional embedding index for large repositories.
+- A pending-hunks view with accept/reject per hunk across files, and CodeLens actions inside the diff.
+- Quota-aware routing that picks a model by remaining quota before the run starts.

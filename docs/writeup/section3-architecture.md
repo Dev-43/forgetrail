@@ -18,7 +18,7 @@ graph TD
 
     subgraph Model Providers
         Primary[Google Gemini / Primary Model]
-        Secondary[Groq / Secondary Model]
+        Secondary[Fallback models: Groq / NVIDIA]
     end
 
     Panel -->|instruction| RC

@@ -62,7 +62,9 @@ Install Flask in editable mode along with its test suite dependencies:
 ```bash
 pip install --upgrade pip
 pip install -e .
-pip install -r tests/requirements.txt
+# Flask 3.1.3 has no requirements file; its test dependencies are listed in pyproject.toml.
+# Pin pytest below 9: pytest 9 removed `_pytest.monkeypatch.notset`, which tests/test_cli.py imports.
+pip install "pytest<9" asgiref greenlet python-dotenv
 ```
 
 ---
@@ -76,7 +78,7 @@ pytest tests/test_cli.py -q
 ```
 Expected output:
 ```text
-56 passed, 3 skipped
+58 passed   (count can differ slightly by platform; there must be no failures)
 ```
 
 ---
@@ -118,3 +120,9 @@ ForgeTrail provides automated scripts to inspect and restore the Flask repositor
   ```bash
   npm run verify:b
   ```
+
+---
+
+## 8. Notes
+
+- The `.venv` folder is untracked in Flask 3.1.3. `npm run reset:flask` keeps it (`git clean -fd -e .venv`) and `npm run verify:b` / `verify:c` ignore it.

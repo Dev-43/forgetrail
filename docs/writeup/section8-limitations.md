@@ -1,17 +1,16 @@
 # Section 8 — Known Limitations
 
-The following limitations are explicitly documented and backed by logged spike evidence:
+1. **Free-tier quotas decide Task B.** Task B needs roughly 20–40 model requests. On free tiers the primary runs out of quota or gets 429/503 mid-run; ForgeTrail then backs off and fails over, but a run can still end without finishing. Tool calls are paced at 4.5 s (`MIN_TOOL_INTERVAL_MS` in `src/mcp/server.ts`) to stay under per-minute limits.
+2. **20 s model header timeout.** TrueForge 0.184.2 local mode gives a model 20 s to start answering; slower models (observed with `gemini-3-7-flash`) fail and are treated as transient errors.
+3. **Model quality still matters for Task B.** In testing, a model produced a `flask config` command that crashed on non-JSON config values (`timedelta`) and still reported "done". ForgeTrail shows every hunk for review but does not itself run the tests before the agent finishes.
+4. **Single active run.** One run at a time; the budget and cancel flag belong to the active run because MCP calls carry no TrueForge session id.
+5. **Regex outlines only for Python, TypeScript and JavaScript.** Other files are found by `search_workspace` and content scoring in `suggest_context`, but get no symbol outline.
+6. **No sandbox on Windows.** TrueForge's local sandbox supports Linux and macOS only; `run_command` runs as a child process in the workspace, auto-allowing only plain `pytest` / `git status` / `git diff` commands and asking for everything else.
 
-1. **Free-Tier RPM & TPM Rate Quotas**:
-   - Google AI Studio enforces 15 requests per minute (RPM) and 250,000 tokens per minute (TPM).
-   - Rapid multi-turn MCP loops can trigger 429 errors without rate pacing. ForgeTrail mitigates this by enforcing `MIN_TOOL_INTERVAL_MS = 4500` (<= 13.3 RPM) in `src/mcp/server.ts`.
-2. **TrueForge Standalone 20s Model Header Timeout**:
-   - In TrueForge 0.184.2 local standalone mode, the HTTP client timeout for receiving initial response headers is fixed at 20 seconds. Heavy reasoning models (e.g. OpenAI o1 or deep thinking variants) can exceed this limit on large turns.
-3. **NVIDIA NIM 404 Function Routes**:
-   - Live developer keys from `build.nvidia.com` return HTTP 404 Function Not Found on general accounts.
-4. **Single Active Run Concurrency**:
-   - ForgeTrail deliberately locks the extension to one active run (`currentState !== 'idle'`) to prevent interleaved file modifications and state corruption.
-5. **Regex Symbol Outline Scope**:
-   - In-memory regex definition extractors support Python, TypeScript, and JavaScript. Other languages fall back to line-bracketed lexical chunks.
-6. **Windows Local Sandbox Fallback**:
-   - TrueForge's `LocalSandboxProvider` supports Linux and macOS container isolation; on Windows, commands execute in child processes gated by pathGuard and auto-allowlists.
+### What we would do with another month
+
+- Run the tests (`run_command`) automatically before a run may finish, and feed failures back to the agent.
+- Keep the conversation when failing over mid-run instead of restarting on the fallback agent with an "already applied" list.
+- Tree-sitter outlines for more languages and an optional embedding index for large repositories.
+- A pending-hunks view with accept/reject per hunk across files, and CodeLens actions inside the diff.
+- Quota-aware routing that picks a model by remaining quota before the run starts.

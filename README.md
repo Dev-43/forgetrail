@@ -108,9 +108,9 @@ ForgeTrail includes automated verification runners for all competition benchmark
 ForgeTrail is completely model-independent: there are **zero provider-specific names** anywhere in `src/`.
 
 - **To switch models**:
-  Edit `config/models.json` or run the 60-second setup drill:
+  Edit `config/models.json` (providers, keys by env-var name, and `models.primary` / `fallback` / `agentFallback` as `<provider>/<model id>`), then run `npm run setup`. Or override for one setup run:
   ```bash
-  npm run setup -- --primary <provider/model> --fallback <provider/model>
+  npm run setup -- --primary <provider>/<model id> --fallback <provider>/<model id>
   ```
 - **Simulate primary provider outage**:
   ```bash
@@ -138,16 +138,19 @@ From scratch — no upstream project was forked.
 
 ## 9. Models used and cost
 
-- **Primary Model**: `google-gemini/gemini-flash-lite-latest` (or `gemini-3.5-flash-lite`) via Google AI Studio Free Tier ($0.00 / free).
-- **Fallback Model**: `google-gemini/gemini-3-1-flash-lite` or Groq `llama-3.3-70b-versatile` ($0.00 / free).
+- **Primary (inline + agent mode)**: `google-gemini/gemini-3-6-flash`, Google AI Studio free tier ($0.00).
+- **Inline fallback**: `qwen/qwen3.8-27b` on Groq (OpenAI-compatible), free tier ($0.00).
+- **Agent-mode fallback**: `mistralai/mistral-large-4-1t-a52b` on NVIDIA build.nvidia.com (OpenAI-compatible), free credits ($0.00).
 - **Total Compute Cost**: \$0.00 incurred across all runs.
+
+Minimum model requirement: tool calling, and a context window of at least 32k tokens.
 
 ---
 
 ## 10. Known limitations
 
-1. **Google AI Studio Free Tier Quotas**: Free Tier enforces 15 requests per minute (RPM) and 500 requests per day (RPD). Paced with 4.5s intervals in `src/mcp/server.ts`.
+1. **Free-tier quotas**: free tiers hit 429/503 during long Task B runs. Tool calls are paced at 4.5 s in `src/mcp/server.ts`; ForgeTrail backs off and fails over to the fallback model.
 2. **TrueForge Standalone 20s Header Timeout**: Pre-1.0 TrueForge standalone backend has an unconfigurable 20s header timeout. Deep-thinking models may time out if generation exceeds 20s.
-3. **NVIDIA NIM 404 Behavior**: Developer-tier NVIDIA NIM function endpoints return HTTP 404 Function Not Found on general accounts.
+3. **Keybinding**: `Ctrl+Alt+E` acts as AltGr on some Windows keyboard layouts; use `Ctrl+K E`, the editor right-click menu or the Command Palette ("ForgeTrail: Inline Edit"). Cancel any run with "ForgeTrail: Cancel Run" or by clicking the status bar item.
 4. **Single Active Run Concurrency**: The run controller enforces single-run isolation to prevent concurrent file corruption.
 5. **Regex Symbol Outlines**: Symbol definitions are extracted for Python, TypeScript, and JavaScript.
