@@ -13,11 +13,9 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onCommand:forgetrail.hello",
-    "onCommand:forgetrail.mockReview",
     "onCommand:forgetrail.inlineEdit",
-    "onCommand:forgetrail.review.accept",
-    "onCommand:forgetrail.review.reject",
-    "onCommand:forgetrail.review.show"
+    "onCommand:forgetrail.mockReview",
+    "onCommand:forgetrail.openPanel"
   ],
   "contributes": {
     "commands": [
@@ -49,11 +47,15 @@
       },
       {
         "command": "forgetrail.undoLast",
-        "title": "ForgeTrail: Undo Last Hunk"
+        "title": "ForgeTrail: Undo Last Edit"
       },
       {
         "command": "forgetrail.undoRun",
         "title": "ForgeTrail: Undo Run"
+      },
+      {
+        "command": "forgetrail.openPanel",
+        "title": "ForgeTrail: Open Agent Panel"
       }
     ],
     "keybindings": [
@@ -103,17 +105,28 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "tsx --test test/*.test.ts",
-    "trueforge": "node scripts/start-trueforge.mjs"
+    "trueforge": "node scripts/start-trueforge.mjs",
+    "setup": "tsx scripts/setup.ts",
+    "reset:flask": "tsx scripts/reset-flask.ts",
+    "verify:a": "tsx scripts/verify.ts a",
+    "verify:b": "tsx scripts/verify.ts b",
+    "verify:c": "tsx scripts/verify.ts c",
+    "test:task-a": "tsx scripts/test-task-a.ts",
+    "test:task-b": "tsx scripts/test-task-b.ts",
+    "test:task-c": "tsx scripts/test-task-c.ts",
+    "test:cancel": "tsx scripts/test-cancel.ts",
+    "check": "tsx scripts/check-submission.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.6.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@truefoundry/trueforge-sdk": "0.184.1"
   },
   "devDependencies": {
-    "@truefoundry/trueforge": "0.184.2",
-    "@types/node": "^22.14.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.13.4",
     "@types/vscode": "^1.93.0",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3"
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "zod": "^3.24.2"
   }
 }
