@@ -7,8 +7,13 @@ export function getTrueForgeUrl(): string {
   return process.env.TRUEFORGE_URL ?? 'http://localhost:8790';
 }
 
+// tsc (module: commonjs) rewrites `await import()` into `require()`, which loads the
+// SDK's CJS build as ESM and crashes ("exports is not defined in ES module scope").
+// Calling import() through Function keeps it a real ES dynamic import after compilation.
+const importEsm = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+
 export async function getTrueForgeClient(baseUrl = getTrueForgeUrl()): Promise<any> {
-  const { TrueForge } = await import('@truefoundry/trueforge-sdk');
+  const { TrueForge } = await importEsm('@truefoundry/trueforge-sdk');
   return new TrueForge({
     baseUrl,
     timeoutInSeconds: 120,
