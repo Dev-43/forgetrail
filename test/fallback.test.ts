@@ -150,3 +150,50 @@ test('runWithFallback: returns no-fallback error when fallback agent also fails'
   assert.equal(result.status, 'error');
   assert.equal(result.errorKind, 'no-fallback');
 });
+
+test('classifyError: invalid API key messages without a status code count as auth', () => {
+  assert.equal(classifyError('[Model Error] API key not valid. Please pass a valid API key.'), 'auth');
+  assert.equal(classifyError('[Model Error] Request failed (400): API_KEY_INVALID'), 'auth');
+  assert.equal(classifyError('Invalid API Key'), 'auth');
+});
+
+test('runWithFallback: tells the fallback agent which hunks were already applied', async () => {
+  const extras: string[] = [];
+  const mockExecutor = async (agent: string, _req: RunRequest, extra?: string): Promise<RunResult> => {
+    extras.push(extra || '');
+    if (agent === 'forgetrail-agent-primary') {
+      return { status: 'error', message: 'Request failed (401)', appliedCount: 1, appliedSummaries: ['src/a.py lines 1-2 — first change'] };
+    }
+    return { status: 'done', message: 'ok', appliedCount: 1, appliedSummaries: ['src/b.py lines 3-4 — second change'] };
+  };
+  const result = await runWithFallback({ kind: 'agent', instruction: 't', workspaceRoot: '.' }, { executor: mockExecutor });
+  assert.equal(result.status, 'done');
+  assert.equal(result.appliedCount, 2);
+  assert.match(extras[1], /ALREADY APPLIED:\nsrc\/a\.py lines 1-2 — first change/);
+});
+
+test('runWithFallback: backs off on fallback rate limits before giving up', async () => {
+  const sleeps: number[] = [];
+  let fallbackCalls = 0;
+  const mockExecutor = async (agent: string): Promise<RunResult> => {
+    if (agent === 'forgetrail-inline-primary') return { status: 'error', message: 'Request failed (401)', appliedCount: 0 };
+    fallbackCalls++;
+    return fallbackCalls < 3
+      ? { status: 'error', message: 'Request failed (429): Rate limit reached', appliedCount: 0 }
+      : { status: 'done', message: 'ok', appliedCount: 1 };
+  };
+  const result = await runWithFallback({ kind: 'inline', instruction: 't', workspaceRoot: '.' }, {
+    executor: mockExecutor, sleepFn: async (ms) => { sleeps.push(ms); }, backoffMs: [10, 20],
+  });
+  assert.equal(result.status, 'done');
+  assert.deepEqual(sleeps, [10, 20]);
+});
+
+test('runWithFallback: no-fallback result carries the user-facing message', async () => {
+  const result = await runWithFallback({ kind: 'inline', instruction: 't', workspaceRoot: '.' }, {
+    executor: async () => ({ status: 'error', message: 'NotFoundError\nStatus code: 404\nBody: {...}', appliedCount: 0 }),
+  });
+  assert.equal(result.errorKind, 'no-fallback');
+  assert.match(result.message, /^ForgeTrail: the model could not be reached\. Nothing was changed\./);
+  assert.doesNotMatch(result.message, /Body:/);
+});

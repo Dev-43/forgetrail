@@ -1,0 +1,26 @@
+{
+  "_note": "Event shapes as streamed by TrueForge 0.184.2 (recorded from real sessions); replaces the spike file dev/forge-spike/results/logs/05-event-samples.json, which is not in the repository.",
+  "model.message.delta": {
+    "type": "model.message.delta",
+    "thread_id": "main",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_16388427314343380977",
+        "type": "function",
+        "function": { "name": "search_workspace", "arguments": "{\"query\":\"def get_debug_flag\"}" }
+      }
+    ]
+  },
+  "tool.response": {
+    "type": "tool.response",
+    "thread_id": "main",
+    "tool_name": "search_workspace",
+    "tool_call_id": "call_16388427314343380977",
+    "content": "[search: def get_debug_flag | 1 matches | ~12 tokens | budget left 11988]\nsrc/flask/helpers.py:28:def get_debug_flag() -> bool:"
+  },
+  "turn.done": {
+    "type": "turn.done",
+    "state": { "status": "done", "output": { "content": "Updated get_debug_flag in src/flask/helpers.py." } }
+  }
+}
