@@ -13,6 +13,7 @@ import {
   E_CANCELLED,
   D_NOT_FOUND,
   D_AMBIGUOUS,
+  E_FILE_EXISTS,
   R_APPLIED,
 } from '../shared/contracts';
 import { validateWorkspacePath } from '../mcp/pathGuard';
@@ -70,9 +71,11 @@ export async function applyHunk(
   const relPath = guard.relativePath!;
 
   let currentText = '';
+  const existedBefore = fs.existsSync(absPath);
   if (request.kind === 'create') {
-    if (fs.existsSync(absPath)) {
-      currentText = fs.readFileSync(absPath, 'utf-8');
+    // Re-validate: a create never overwrites an existing file
+    if (existedBefore) {
+      return E_FILE_EXISTS(relPath);
     }
   } else {
     if (!fs.existsSync(absPath)) {
@@ -108,6 +111,7 @@ export async function applyHunk(
     path: relPath,
     fullTextBefore: currentText,
     fullTextAfter: proposedText,
+    createdFile: !existedBefore,
     timestamp: Date.now(),
   });
 
@@ -147,10 +151,20 @@ export async function applyHunk(
     return `ERROR APPLY_FAILED: ${err?.message}`;
   }
 
-  // Calculate applied line range
-  const linesBeforeHunk = proposedText.slice(0, proposedText.indexOf(request.newText)).split('\n').length;
-  const newLinesCount = request.newText.split('\n').length;
-  const startLine = linesBeforeHunk;
+  // Calculate applied line range from where the old text matched (EOL-normalised), not by
+  // searching for new_text, which can be absent after CRLF conversion or occur earlier.
+  let startLine = 1;
+  let newLinesCount = request.newText.split(/\r?\n/).length;
+  if (request.kind === 'replace') {
+    const isCrlf = currentText.includes('\r\n');
+    const normalizedOld = isCrlf
+      ? request.oldText.replace(/\r?\n/g, '\r\n')
+      : request.oldText.replace(/\r\n/g, '\n');
+    const matchIndex = currentText.indexOf(normalizedOld);
+    startLine = currentText.slice(0, Math.max(0, matchIndex)).split(/\r?\n/).length;
+  } else {
+    newLinesCount = proposedText.split(/\r?\n/).length;
+  }
   const endLine = startLine + newLinesCount - 1;
 
   runContext.recordApplied({
