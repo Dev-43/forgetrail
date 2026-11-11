@@ -9,14 +9,21 @@ const flaskDir = path.resolve(process.cwd(), 'dev/forge-spike/flask');
 
 class HangingReviewPresenter implements ReviewPresenter {
   public receivedReview = false;
+  private resolveFn?: (decision: ReviewDecision) => void;
+
   async present(request: ReviewRequest): Promise<ReviewDecision> {
     this.receivedReview = true;
     console.log(`[ReviewPresenter] Diff review opened for ${request.path} (waiting for user)...`);
-    // Hang until cancelled by test
-    return new Promise(() => {});
+    return new Promise((resolve) => {
+      this.resolveFn = resolve;
+    });
   }
+
   dispose(_runId: string): void {
     console.log('[ReviewPresenter] Active review tabs disposed cleanly on cancel.');
+    if (this.resolveFn) {
+      this.resolveFn({ id: '', decision: 'reject', reason: 'cancelled' });
+    }
   }
 }
 
