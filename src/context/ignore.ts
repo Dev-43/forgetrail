@@ -19,4 +19,3 @@ export function isIgnoredPath(relativePath: string): boolean {
   const segments = normalized.split('/');
   return segments.some((segment) => IGNORED_FOLDERS.has(segment));
 }
-

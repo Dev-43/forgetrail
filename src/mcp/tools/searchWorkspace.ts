@@ -3,7 +3,7 @@ import * as path from 'path';
 import { E_BUDGET } from '../../shared/contracts';
 import { SEARCH_LINE_MAX_CHARS, SEARCH_MAX_MATCHES } from '../../shared/limits';
 import { isIgnoredPath } from '../../context/ignore';
-import { runContext } from '../runContext';
+import { estimateTokens, recordRetrievalTokens } from '../budget';
 
 export interface SearchWorkspaceParams {
   query: string;
@@ -101,14 +101,13 @@ export async function executeSearchWorkspace(
   const linesOutput = matches.map((m) => `${m.path}:${m.line}:${m.text}`).join('\n');
   const body = matches.length === 0 ? 'No matches found.' : linesOutput;
 
-  const estimatedTokens = Math.ceil(body.length / 4);
-  const budgetResult = runContext.consumeBudget(estimatedTokens);
+  const estimatedTokens = estimateTokens(body);
+  const budgetResult = recordRetrievalTokens(estimatedTokens);
 
-  if (budgetResult.used > runContext.budgetMax) {
-    return E_BUDGET(budgetResult.used, runContext.budgetMax);
+  if (budgetResult.exhausted) {
+    return E_BUDGET(budgetResult.used, budgetResult.max);
   }
 
   const header = `[search: ${params.query} | ${matches.length} matches | ~${estimatedTokens} tokens | budget left ${budgetResult.remaining}]`;
   return `${header}\n${body}`;
 }
-

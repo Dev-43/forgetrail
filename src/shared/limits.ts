@@ -12,4 +12,3 @@ export const MAX_ATTEMPTS = 3;
 export const AGENT_ITERATION_LIMIT = 40;
 export const AUTO_DENY_LIMIT_PER_FILE = 3;
 export const BACKOFF_MS = [2000, 4000] as const;
-

@@ -1,4 +1,12 @@
-import * as vscode from 'vscode';
+import type * as vscodeTypes from 'vscode';
+
+function getVscode(): typeof vscodeTypes | null {
+  try {
+    return require('vscode');
+  } catch {
+    return null;
+  }
+}
 
 // U-4 Canonical Strings
 export const S_SELECT = 'Select code first.';
@@ -18,6 +26,9 @@ export const S_STALE_SKIP = (path: string): string => `ForgeTrail: skipped a hun
  * Shows an information notification after hunks are applied, offering "Undo last" and "Undo run" buttons.
  */
 export async function showAppliedNotification(count: number): Promise<void> {
+  const vscode = getVscode();
+  if (!vscode) return;
+
   const message = S_APPLIED(count);
   const actionUndoLast = 'Undo last';
   const actionUndoRun = 'Undo run';
@@ -31,30 +42,36 @@ export async function showAppliedNotification(count: number): Promise<void> {
 }
 
 export function showStaleSkipNotification(path: string): void {
-  vscode.window.showWarningMessage(S_STALE_SKIP(path));
+  const vscode = getVscode();
+  vscode?.window.showWarningMessage(S_STALE_SKIP(path));
 }
 
 export function showUndoDoneNotification(path: string): void {
-  vscode.window.showInformationMessage(S_UNDO_DONE(path));
+  const vscode = getVscode();
+  vscode?.window.showInformationMessage(S_UNDO_DONE(path));
 }
 
 export function showUndoBlockedNotification(path: string): void {
-  vscode.window.showWarningMessage(S_UNDO_BLOCKED(path));
+  const vscode = getVscode();
+  vscode?.window.showWarningMessage(S_UNDO_BLOCKED(path));
 }
 
 export function showNoFallbackNotification(): void {
-  vscode.window.showErrorMessage(S_NO_FALLBACK);
+  const vscode = getVscode();
+  vscode?.window.showErrorMessage(S_NO_FALLBACK);
 }
 
 export function showCancelledNotification(applied: number, discarded: number): void {
-  vscode.window.showInformationMessage(S_CANCELLED(applied, discarded));
+  const vscode = getVscode();
+  vscode?.window.showInformationMessage(S_CANCELLED(applied, discarded));
 }
 
 export function showSelectCodeNotification(): void {
-  vscode.window.showWarningMessage(S_SELECT);
+  const vscode = getVscode();
+  vscode?.window.showWarningMessage(S_SELECT);
 }
 
 export function showBusyNotification(): void {
-  vscode.window.showWarningMessage(S_BUSY);
+  const vscode = getVscode();
+  vscode?.window.showWarningMessage(S_BUSY);
 }
-

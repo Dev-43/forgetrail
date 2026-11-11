@@ -1,0 +1,326 @@
+:root {
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --bg-color: var(--vscode-editor-background, #1e1e1e);
+  --fg-color: var(--vscode-editor-foreground, #d4d4d4);
+  --card-bg: var(--vscode-sideBar-background, #252526);
+  --border-color: var(--vscode-widget-border, #3c3c3c);
+  --accent-color: var(--vscode-button-background, #0e639c);
+  --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
+  --danger-color: #d9534f;
+  --danger-hover: #c9302c;
+  --success-color: #5cb85c;
+  --warning-color: #f0ad4e;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--fg-color);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px;
+}
+
+.panel-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.brand-title {
+  font-weight: 600;
+  font-size: 15px;
+  margin-right: 8px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.switch-badge {
+  background-color: var(--warning-color);
+  color: #000;
+  font-weight: bold;
+}
+
+.state-idle {
+  background-color: #555;
+  color: #fff;
+}
+
+.state-running {
+  background-color: var(--accent-color);
+  color: #fff;
+  animation: pulse 1.5s infinite;
+}
+
+.state-awaiting {
+  background-color: var(--warning-color);
+  color: #000;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; }
+}
+
+.banner {
+  padding: 8px 12px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-banner {
+  background-color: rgba(217, 83, 79, 0.2);
+  border: 1px solid var(--danger-color);
+  color: #ff8080;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section-title, .card-title {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--card-bg);
+  color: var(--fg-color);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: 1px solid var(--accent-color);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--danger-hover);
+}
+
+.btn-secondary {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--fg-color);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #333;
+}
+
+.budget-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background-color: var(--card-bg);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
+.progress-bar-fill.warning {
+  background-color: var(--warning-color);
+}
+
+.progress-bar-fill.danger {
+  background-color: var(--danger-color);
+}
+
+.card-section {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.plan-list {
+  padding-left: 20px;
+  margin-top: 4px;
+}
+
+.plan-list li {
+  margin-bottom: 4px;
+}
+
+.context-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.context-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.context-path {
+  font-weight: 500;
+  color: var(--vscode-textLink-foreground, #3794ff);
+  cursor: pointer;
+}
+
+.context-reason {
+  color: var(--vscode-descriptionForeground, #888);
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+.transcript-box {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px;
+  min-height: 120px;
+  max-height: 350px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.placeholder-text {
+  color: var(--vscode-descriptionForeground, #777);
+  font-style: italic;
+}
+
+.tool-trail-list, .hunk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trail-item, .hunk-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.trail-status-ok {
+  color: var(--success-color);
+  font-weight: bold;
+}
+
+.trail-status-failed {
+  color: var(--danger-color);
+  font-weight: bold;
+}
+
+.hunk-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.hunk-status.pending { background: var(--warning-color); color: #000; }
+.hunk-status.accepted { background: var(--success-color); color: #fff; }
+.hunk-status.rejected { background: var(--danger-color); color: #fff; }
+.hunk-status.applied { background: var(--accent-color); color: #fff; }
+
+.hidden {
+  display: none !important;
+}
