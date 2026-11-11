@@ -44,8 +44,11 @@ export function validateWorkspacePath(
     absPath = path.resolve(normalizedRoot, cleanInput).replace(/\\/g, '/');
   }
 
-  // Check workspace containment (case-insensitive for Windows safety)
-  if (!absPath.toLowerCase().startsWith(normalizedRoot.toLowerCase())) {
+  // Check workspace containment (case-insensitive for Windows safety). Compare whole path
+  // segments: "C:/ws-evil" must not count as inside "C:/ws".
+  const absLower = absPath.toLowerCase();
+  const rootLower = normalizedRoot.toLowerCase();
+  if (absLower !== rootLower && !absLower.startsWith(rootLower + '/')) {
     return {
       ok: false,
       error: E_PATH_OUTSIDE(cleanInput),

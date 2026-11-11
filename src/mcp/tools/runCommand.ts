@@ -45,12 +45,13 @@ export function killActiveCommand(): void {
  */
 export function isCommandAutoAllowed(command: string): boolean {
   const trimmed = command.trim();
-  return (
-    trimmed.startsWith('pytest') ||
-    trimmed.startsWith('python -m pytest') ||
-    trimmed.startsWith('git status') ||
-    trimmed.startsWith('git diff')
-  );
+  // Anything that could chain, pipe, redirect or substitute another command needs the user's OK
+  // (e.g. "pytest && del /s ..." or "git status; curl ..."). Newlines count as separators too.
+  if (/[;&|<>`$\r\n^%]/.test(trimmed) || /\$\(/.test(trimmed)) {
+    return false;
+  }
+  // Match whole words: "pytest" or "pytest <args>", not "pytestevil".
+  return /^(pytest|python -m pytest|git status|git diff)(\s|$)/.test(trimmed);
 }
 
 /**
