@@ -15,6 +15,8 @@ export interface HunkSnapshot {
   path: string;
   fullTextBefore: string;
   fullTextAfter: string;
+  /** True when the hunk created the file; undo then deletes the file instead of emptying it. */
+  createdFile?: boolean;
   timestamp: number;
 }
 
@@ -77,8 +79,9 @@ export class UndoStore {
       if (vscode && vscode.workspace && vscode.Uri) {
         const uri = vscode.Uri.file(absPath);
         const edit = new vscode.WorkspaceEdit();
-        if (last.fullTextBefore === '' && !fs.existsSync(absPath)) {
-          // Was a create, delete file
+        const wasCreate = last.createdFile === true;
+        if (wasCreate) {
+          // The hunk created this file: undo removes it (byte-for-byte workspace restore)
           edit.deleteFile(uri, { ignoreIfNotExists: true });
         } else {
           const doc = await vscode.workspace.openTextDocument(uri);
@@ -89,13 +92,16 @@ export class UndoStore {
           edit.replace(uri, fullRange, last.fullTextBefore);
         }
         const applied = await vscode.workspace.applyEdit(edit);
-        if (applied) {
+        if (!applied) {
+          return { success: false, message: `Undo failed: VS Code rejected the edit for ${last.path}.` };
+        }
+        if (!wasCreate) {
           const doc = await vscode.workspace.openTextDocument(uri);
           await doc.save();
         }
       } else {
         // Fallback for headless / tests
-        if (last.fullTextBefore === '') {
+        if (last.createdFile === true || (last.createdFile === undefined && last.fullTextBefore === '')) {
           if (fs.existsSync(absPath)) {
             fs.unlinkSync(absPath);
           }
