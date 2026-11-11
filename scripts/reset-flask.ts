@@ -35,8 +35,12 @@ try {
   }
 
   execSync('git checkout -- .', { cwd: flaskDir, stdio: 'inherit' });
-  execSync('git clean -fd', { cwd: flaskDir, stdio: 'inherit' });
-  const status = execSync('git status --short', { cwd: flaskDir, encoding: 'utf8' }).trim();
+  // Keep the venv: it is untracked in Flask 3.1.3, so a plain `git clean -fd` would delete it
+  execSync('git clean -fd -e .venv', { cwd: flaskDir, stdio: 'inherit' });
+  const status = execSync('git status --short', { cwd: flaskDir, encoding: 'utf8' })
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !/^\?\? \.venv\/?$/.test(l.trim()))
+    .join('\n');
   if (status.length > 0) {
     console.error(`Git status not empty after reset: ${status}`);
     process.exit(1);

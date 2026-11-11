@@ -3,6 +3,27 @@ import { resolve } from 'node:path';
 import { runContext } from '../src/mcp/runContext';
 import { startMcpServer, stopMcpServer } from '../src/mcp/server';
 
+/**
+ * npm run setup — registers model providers, MCP connectors and the four ForgeTrail agents in
+ * TrueForge, then smoke-tests the inline agents.
+ *
+ * Everything model-related comes from config/models.json (schema: config/models.example.json):
+ *   providers[]  name, type ("builtin" = TrueForge catalog provider, "openai-compatible"), baseUrl,
+ *                apiKeyEnv, models[] (model ids; openai-compatible only)
+ *   models       primary, fallback, agentPrimary?, agentFallback?   as "<provider>/<model id>"
+ *
+ * Flags:
+ *   --primary <ref>         override models.primary (and agentPrimary) for this run, files untouched
+ *   --fallback <ref>        override models.fallback (and agentFallback)
+ *   --agent-fallback <ref>  override models.agentFallback only (agent mode / Task B)
+ *   --break-primary         register the primary model's provider with an invalid key (Task C demo)
+ *   --no-fallback           do not create the two -fallback agents (Task C case 2)
+ *   --restore               same as running with no flags: real keys, all four agents
+ */
+
+const TRUEFORGE_PREFIX = 'forgetrail-';
+const AGENT_FILES = ['inline.primary.json', 'inline.fallback.json', 'agent.primary.json', 'agent.fallback.json'];
+
 function loadEnv(): Record<string, string> {
   const env: Record<string, string> = { ...process.env as Record<string, string> };
   const envPath = resolve(process.cwd(), '.env');
@@ -20,125 +41,215 @@ function loadEnv(): Record<string, string> {
   return env;
 }
 
+interface ProviderConfig {
+  name: string;
+  type: 'builtin' | 'openai-compatible';
+  baseUrl?: string;
+  apiKeyEnv: string;
+  models?: Array<string | { id: string; contextLength?: number; maxOutputTokens?: number }>;
+}
+
+interface ModelsConfig {
+  providers: ProviderConfig[];
+  models: { primary: string; fallback?: string; agentPrimary?: string; agentFallback?: string };
+}
+
+/** TrueForge model and provider names: 2–64 chars, lowercase, letters/digits/hyphens, start with a letter. */
+export function toTrueForgeName(id: string): string {
+  let n = id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
+  if (!/^[a-z]/.test(n)) n = `m-${n}`;
+  return n.slice(0, 64).replace(/-+$/, '');
+}
+
+/** Splits "<provider>/<model id>" at the first slash (model ids may contain slashes). */
+function splitRef(ref: string): { provider: string; model: string } {
+  const i = ref.indexOf('/');
+  if (i <= 0) throw new Error(`Model reference "${ref}" must look like <provider>/<model id>`);
+  return { provider: ref.slice(0, i), model: ref.slice(i + 1) };
+}
+
 const env = loadEnv();
 const TRUEFORGE_URL = env.TRUEFORGE_URL || 'http://localhost:8790';
+const api = (p: string) => `${TRUEFORGE_URL}/api/v1${p}`;
 
-// Command-line flag parsing
 const args = process.argv.slice(2);
 const breakPrimary = args.includes('--break-primary');
 const noFallback = args.includes('--no-fallback');
-const restore = args.includes('--restore');
-let primaryOverride: string | null = null;
-let fallbackOverride: string | null = null;
+const flagValue = (name: string): string | null => {
+  const i = args.indexOf(name);
+  return i !== -1 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : null;
+};
+const primaryOverride = flagValue('--primary');
+const fallbackOverride = flagValue('--fallback');
+const agentFallbackOverride = flagValue('--agent-fallback');
 
-for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--primary' && args[i + 1]) {
-    primaryOverride = args[i + 1];
-    i++;
-  } else if (args[i] === '--fallback' && args[i + 1]) {
-    fallbackOverride = args[i + 1];
-    i++;
-  }
+let failures = 0;
+const pass = (name: string, extra = '') => console.log(`PASS ${name}${extra ? ` ${extra}` : ''}`);
+const fail = (name: string, reason: string) => { failures++; console.log(`FAIL ${name}: ${reason}`); };
+const warn = (name: string, reason: string) => console.log(`WARN ${name}: ${reason}`);
+const redact = (s: string) => s.replace(/(AIza|AQ\.|gsk_|nvapi-|xai-|sk-)[A-Za-z0-9_\-.]+/g, '***');
+
+async function readBody(res: Response): Promise<string> {
+  try { return redact((await res.text()).slice(0, 400)); } catch { return ''; }
 }
 
 async function run() {
   console.log('ForgeTrail Setup Script starting...');
+  if (args.includes('--restore')) {
+    console.log('(--restore: registering real keys and all four agents)');
+  }
+
   const modelsConfigPath = resolve(process.cwd(), 'config', 'models.json');
   if (!existsSync(modelsConfigPath)) {
     console.error('Copy config/models.example.json to config/models.json.');
     process.exit(1);
   }
+  const config: ModelsConfig = JSON.parse(readFileSync(modelsConfigPath, 'utf8'));
+  if (!Array.isArray(config.providers) || !config.models?.primary) {
+    console.error('config/models.json needs "providers" and "models.primary".');
+    process.exit(1);
+  }
+
+  // Resolve which model each agent uses (overrides beat config; agent-mode roles default to inline roles)
+  const roles = {
+    inlinePrimary: primaryOverride ?? config.models.primary,
+    agentPrimary: primaryOverride ?? config.models.agentPrimary ?? config.models.primary,
+    inlineFallback: fallbackOverride ?? config.models.fallback ?? null,
+    agentFallback: agentFallbackOverride ?? fallbackOverride ?? config.models.agentFallback ?? config.models.fallback ?? null,
+  };
 
   // Step 1: trueforge-reachable
+  let catalog: any[] = [];
   try {
-    const res = await fetch(`${TRUEFORGE_URL}/api/v1/catalogs/model-providers`);
+    const res = await fetch(api('/catalogs/model-providers'));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    console.log('PASS trueforge-reachable');
+    catalog = (await res.json()).data ?? [];
+    pass('trueforge-reachable');
   } catch (err: any) {
     console.error(`FAIL trueforge-reachable: ${err.message}. Run "npm run trueforge" first.`);
     process.exit(1);
   }
 
-  const secondaryKey = env.SECONDARY_API_KEY?.trim();
+  // Remove our own agents first: TrueForge refuses to delete a provider an agent still uses.
+  // Agents that are not ForgeTrail's are left alone.
+  try {
+    const existing = (await (await fetch(api('/agents'))).json()).data ?? [];
+    for (const a of existing) {
+      if (typeof a.name === 'string' && a.name.startsWith(TRUEFORGE_PREFIX)) {
+        await fetch(api(`/agents/${a.id}`), { method: 'DELETE' });
+      }
+    }
+  } catch {
+    // listed again below; creation will report real errors
+  }
 
   // Step 2: providers-registered
-  try {
-    let geminiKey = env.GEMINI_API_KEY?.trim() || '';
-    if (breakPrimary) {
-      geminiKey = 'invalid-key-for-demo';
-    }
+  const primaryProvider = splitRef(roles.inlinePrimary).provider;
+  // provider name -> (model id -> TrueForge model name)
+  const registered = new Map<string, Map<string, string>>();
 
-    // Cleanly delete dependent agents first so provider can be recreated if key changed
-    try {
-      const existingAgentsRes = await fetch(`${TRUEFORGE_URL}/api/v1/agents`);
-      if (existingAgentsRes.ok) {
-        const existingAgentsList = (await existingAgentsRes.json()).data || [];
-        for (const a of existingAgentsList) {
-          await fetch(`${TRUEFORGE_URL}/api/v1/agents/${a.id}`, { method: 'DELETE' });
-        }
+  for (const p of config.providers) {
+    const key = env[p.apiKeyEnv]?.trim();
+    if (!key) {
+      warn(`provider-${p.name}`, `${p.apiKeyEnv} is empty in .env; provider skipped`);
+      continue;
+    }
+    const apiKey = breakPrimary && p.name === primaryProvider ? 'invalid-key-for-demo' : key;
+
+    let manifest: any;
+    const names = new Map<string, string>();
+    if (p.type === 'builtin') {
+      const entry = catalog.find((c: any) => c.type === p.name);
+      if (!entry) {
+        fail(`provider-${p.name}`, `no TrueForge catalog provider of type "${p.name}"`);
+        continue;
       }
-      await fetch(`${TRUEFORGE_URL}/api/v1/settings/model-providers/google-gemini`, { method: 'DELETE' });
-    } catch {
-      // ignore
-    }
-
-    if (geminiKey) {
-      const catalogRes = await fetch(`${TRUEFORGE_URL}/api/v1/catalogs/model-providers`);
-      const catalogJson = await catalogRes.json();
-      const geminiCatalog = catalogJson.data?.find((p: any) => p.type === 'google-gemini');
-      const models = (geminiCatalog?.models ?? []).map((m: any) => ({
+      const models = (entry.models ?? []).map((m: any) => ({
         model_id: m.model_id,
         name: m.name,
-        properties: m.properties ?? { context_length: 1048576, max_output_tokens: 65536 }
+        properties: m.properties ?? { context_length: 1048576, max_output_tokens: 65536 },
       }));
-
-      const payload = {
-        manifest: {
-          type: 'google-gemini',
-          auth: { api_key: geminiKey },
-          models
-        }
-      };
-
-      const provRes = await fetch(`${TRUEFORGE_URL}/api/v1/settings/model-providers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!provRes.ok && provRes.status !== 409) {
-        const body = await provRes.text();
-        throw new Error(`Gemini provider registration failed: ${provRes.status} ${body}`);
+      for (const m of models) {
+        names.set(m.model_id, m.name);
+        names.set(m.name, m.name);
       }
-    }
-
-    // Optional secondary provider if configured
-    if (secondaryKey) {
-      const secPayload = {
-        manifest: {
-          type: 'custom',
-          name: 'secondary-provider',
-          base_url: env.SECONDARY_BASE_URL || 'https://api.groq.com/openai/v1',
-          auth: { api_key: secondaryKey },
-          models: [
-            {
-              model_id: 'llama-3.3-70b-versatile',
-              name: 'llama-3.3-70b-versatile',
-              properties: { context_length: 131072, max_output_tokens: 4096 }
-            }
-          ]
-        }
-      };
-      await fetch(`${TRUEFORGE_URL}/api/v1/settings/model-providers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(secPayload)
+      manifest = { type: p.name, auth: { api_key: apiKey }, models };
+    } else {
+      if (!p.baseUrl) {
+        fail(`provider-${p.name}`, 'openai-compatible providers need "baseUrl"');
+        continue;
+      }
+      const models = (p.models ?? []).map((m) => {
+        const id = typeof m === 'string' ? m : m.id;
+        const name = toTrueForgeName(id);
+        names.set(id, name);
+        names.set(name, name);
+        return {
+          model_id: id,
+          name,
+          properties: {
+            context_length: typeof m === 'string' ? 131072 : m.contextLength ?? 131072,
+            max_output_tokens: typeof m === 'string' ? 8192 : m.maxOutputTokens ?? 8192,
+          },
+        };
       });
+      if (models.length === 0) {
+        fail(`provider-${p.name}`, 'list at least one model id in "models"');
+        continue;
+      }
+      manifest = { type: 'custom', name: p.name, base_url: p.baseUrl, auth: { api_key: apiKey }, models };
     }
 
-    console.log('PASS providers-registered');
-  } catch (err: any) {
-    console.error(`FAIL providers-registered: ${err.message}`);
-    process.exit(1);
+    await fetch(api(`/settings/model-providers/${encodeURIComponent(p.name)}`), { method: 'DELETE' }).catch(() => null);
+    const res = await fetch(api('/settings/model-providers'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ manifest }),
+    });
+    if (!res.ok) {
+      fail(`provider-${p.name}`, `${res.status} ${await readBody(res)}`);
+      continue;
+    }
+    registered.set(p.name, names);
+    pass(`provider-${p.name}`, breakPrimary && p.name === primaryProvider ? '(invalid key, --break-primary)' : '');
+  }
+
+  /** "<provider>/<model id>" -> "<provider>/<TrueForge model name>", or null if not registered. */
+  const resolveRef = (ref: string | null): string | null => {
+    if (!ref) return null;
+    const { provider, model } = splitRef(ref);
+    const names = registered.get(provider);
+    if (!names) return null;
+    const name = names.get(model) ?? names.get(toTrueForgeName(model));
+    return name ? `${provider}/${name}` : null;
+  };
+
+  const resolved = {
+    inlinePrimary: resolveRef(roles.inlinePrimary),
+    agentPrimary: resolveRef(roles.agentPrimary),
+    inlineFallback: noFallback ? null : resolveRef(roles.inlineFallback),
+    agentFallback: noFallback ? null : resolveRef(roles.agentFallback),
+  };
+  // The agent-mode fallback may live on its own provider (e.g. NVIDIA for heavy Task B runs);
+  // if that provider has no key, use the inline fallback model instead of creating nothing.
+  if (!noFallback && !resolved.agentFallback && roles.agentFallback && roles.agentFallback !== roles.inlineFallback && resolved.inlineFallback) {
+    warn('agent-fallback', `"${roles.agentFallback}" is not available (missing key?); using ${resolved.inlineFallback} instead`);
+    resolved.agentFallback = resolved.inlineFallback;
+    roles.agentFallback = roles.inlineFallback;
+  }
+  if (!resolved.inlinePrimary || !resolved.agentPrimary) {
+    fail('models-resolved', `primary model "${roles.inlinePrimary}" is not offered by a registered provider`);
+  } else {
+    pass('models-resolved', `inline=${resolved.inlinePrimary} agent=${resolved.agentPrimary}`);
+  }
+  if (!noFallback) {
+    for (const [role, ref] of [['inline-fallback', roles.inlineFallback], ['agent-fallback', roles.agentFallback]] as const) {
+      const r = role === 'inline-fallback' ? resolved.inlineFallback : resolved.agentFallback;
+      if (!ref) warn(role, 'no fallback model configured (models.fallback); fallback agent not created');
+      else if (!r) fail(role, `"${ref}" is not offered by a registered provider (missing key or model id?)`);
+      else if (splitRef(r).provider === primaryProvider) warn(role, `${r} uses the same provider as the primary; --break-primary will break both`);
+      else pass(role, r);
+    }
   }
 
   // Ensure MCP server is reachable on port 3333 (start temporarily in-process if extension is not running)
@@ -154,197 +265,82 @@ async function run() {
     console.error('MCP server startup error in setup:', err.message);
   }
 
-  // Step 3: connector-core
-  try {
-    const payload = {
-      manifest: {
-        type: 'remote',
-        name: 'forgetrail-core',
-        description: 'ForgeTrail Core local MCP server',
-        url: 'http://127.0.0.1:3333/mcp-core'
-      }
-    };
-    const res = await fetch(`${TRUEFORGE_URL}/api/v1/settings/mcp-servers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (res.ok || res.status === 409) {
-      console.log('PASS connector-core');
-    } else {
-      const errText = await res.text();
-      console.log(`WARN connector-core: status=${res.status} body=${errText}`);
+  // Steps 3–4: connectors
+  for (const [name, path] of [['forgetrail-core', 'mcp-core'], ['forgetrail-extra', 'mcp-extra']]) {
+    try {
+      const res = await fetch(api('/settings/mcp-servers'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manifest: { type: 'remote', name, description: `ForgeTrail ${path} local MCP server`, url: `http://127.0.0.1:3333/${path}` } }),
+      });
+      if (res.ok || res.status === 409) pass(`connector-${path.replace('mcp-', '')}`);
+      else warn(`connector-${path.replace('mcp-', '')}`, `status=${res.status} ${await readBody(res)}`);
+    } catch (err: any) {
+      warn(`connector-${path.replace('mcp-', '')}`, `${err.message} (start the extension first)`);
     }
-  } catch (err: any) {
-    console.log(`WARN connector-core: ${err.message} (start the extension first)`);
-  }
-
-  // Step 4: connector-extra
-  try {
-    const payload = {
-      manifest: {
-        type: 'remote',
-        name: 'forgetrail-extra',
-        description: 'ForgeTrail Extra local MCP server',
-        url: 'http://127.0.0.1:3333/mcp-extra'
-      }
-    };
-    const res = await fetch(`${TRUEFORGE_URL}/api/v1/settings/mcp-servers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (res.ok || res.status === 409) {
-      console.log('PASS connector-extra');
-    } else {
-      console.log('WARN connector-extra: start the extension (F5) first');
-    }
-  } catch (err: any) {
-    console.log(`WARN connector-extra: ${err.message} (start the extension first)`);
   }
 
   // Step 5: agents-upserted
-  try {
-    const listRes = await fetch(`${TRUEFORGE_URL}/api/v1/agents`);
-    const listData = await listRes.json();
-    const existingAgents = listData.data || [];
-
-    const agentFiles = [
-      'inline.primary.json',
-      'inline.fallback.json',
-      'agent.primary.json',
-      'agent.fallback.json'
-    ];
-
-    for (const filename of agentFiles) {
-      if (noFallback && filename.includes('fallback')) {
-        const toDeleteList = existingAgents.filter((a: any) => a.name.includes('fallback'));
-        for (const toDelete of toDeleteList) {
-          await fetch(`${TRUEFORGE_URL}/api/v1/agents/${toDelete.id}`, { method: 'DELETE' });
-        }
-        continue;
-      }
-
-      const agentPath = resolve(process.cwd(), 'agents', filename);
-      if (!existsSync(agentPath)) continue;
-      const agentSpec = JSON.parse(readFileSync(agentPath, 'utf8'));
-
-      if (primaryOverride && filename.includes('primary')) {
-        agentSpec.manifest.model.name = primaryOverride;
-      }
-      if (fallbackOverride && filename.includes('fallback')) {
-        agentSpec.manifest.model.name = fallbackOverride;
-      } else if (!secondaryKey && filename.includes('fallback')) {
-        // Fallback to primary provider model if secondary key is not configured
-        agentSpec.manifest.model.name = 'google-gemini/gemini-3-1-flash-lite';
-      }
-
-      const existing = existingAgents.find((a: any) => a.name === agentSpec.name);
-      if (existing) {
-        const updateRes = await fetch(`${TRUEFORGE_URL}/api/v1/agents/${existing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            description: agentSpec.description,
-            manifest: agentSpec.manifest
-          })
-        });
-        if (!updateRes.ok) {
-          const errBody = await updateRes.text();
-          throw new Error(`Failed to update ${agentSpec.name}: ${updateRes.status} ${errBody}`);
-        }
-      } else {
-        const createRes = await fetch(`${TRUEFORGE_URL}/api/v1/agents`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(agentSpec)
-        });
-        if (!createRes.ok) {
-          const errBody = await createRes.text();
-          throw new Error(`Failed to create ${agentSpec.name}: ${createRes.status} ${errBody}`);
-        }
-      }
+  const modelFor: Record<string, string | null> = {
+    'inline.primary.json': resolved.inlinePrimary,
+    'inline.fallback.json': resolved.inlineFallback,
+    'agent.primary.json': resolved.agentPrimary,
+    'agent.fallback.json': resolved.agentFallback,
+  };
+  const created: string[] = [];
+  for (const filename of AGENT_FILES) {
+    const model = modelFor[filename];
+    if (!model) continue; // reported above
+    const agentSpec = JSON.parse(readFileSync(resolve(process.cwd(), 'agents', filename), 'utf8'));
+    agentSpec.manifest.model.name = model;
+    const res = await fetch(api('/agents'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(agentSpec),
+    });
+    if (!res.ok) {
+      fail(`agent-${agentSpec.name}`, `${res.status} ${await readBody(res)}`);
+    } else {
+      created.push(agentSpec.name);
     }
-    console.log('PASS agents-upserted');
-  } catch (err: any) {
-    console.error(`FAIL agents-upserted: ${err.message}`);
-    if (startedOwnMcp) await stopMcpServer().catch(() => {});
-    process.exit(1);
   }
+  if (created.length) pass('agents-upserted', created.join(', '));
 
-  // Step 6: smoke-primary and smoke-fallback
+  // Step 6: smoke tests (through TrueForge sessions, never the provider directly)
   const { TrueForge } = await import('@truefoundry/trueforge-sdk');
-  const client = new TrueForge({ baseUrl: TRUEFORGE_URL, timeoutInSeconds: 30 });
-
-  // Smoke test primary
-  try {
-    const { data: session } = await client.sessions.create({
-      agent: { name: 'forgetrail-inline-primary' }
-    });
+  const client = new TrueForge({ baseUrl: TRUEFORGE_URL, timeoutInSeconds: 60 });
+  const smoke = async (agent: string): Promise<{ reply: string; error: string }> => {
+    const { data: session } = await client.sessions.create({ agent: { name: agent } });
     const stream = await client.sessions.createTurnStream(session.id, {
-      input: [{ type: 'user.message', content: 'Reply with the single word: ready' }]
+      input: [{ type: 'user.message', content: 'Reply with the single word: ready' }],
     });
-
     let reply = '';
-    let errorMessage = '';
+    let error = '';
     for await (const chunk of stream) {
       const event = (chunk as any)?.data ?? chunk;
-      if (event?.type === 'model.message.delta') {
-        reply += (event as any).content ?? '';
-      }
-      if (event?.type === 'turn.done' && event?.state?.status === 'error') {
-        errorMessage = event.state.message || '';
-      }
+      if (event?.type === 'model.message.delta') reply += event.content ?? '';
+      if (event?.type === 'turn.done' && event?.state?.status === 'error') error = String(event.state.message ?? '');
     }
-    if (breakPrimary) {
-      if (errorMessage.includes('401') || errorMessage.includes('400') || errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('invalid')) {
-        console.log('PASS smoke-primary (expected 401/400 failure under --break-primary)');
-      } else {
-        console.log(`PASS smoke-primary (primary failed under --break-primary: ${errorMessage.slice(0, 80)})`);
-      }
-    } else if (reply.toLowerCase().includes('ready')) {
-      console.log('PASS smoke-primary');
-    } else {
-      console.log(`FAIL smoke-primary: unexpected reply "${reply.trim()}" ${errorMessage}`);
-      if (startedOwnMcp) await stopMcpServer().catch(() => {});
-      process.exit(1);
-    }
-  } catch (err: any) {
-    if (breakPrimary) {
-      console.log(`PASS smoke-primary (expected failure under --break-primary: ${err.message})`);
-    } else {
-      console.error(`FAIL smoke-primary: ${err.message}`);
-      if (startedOwnMcp) await stopMcpServer().catch(() => {});
-      process.exit(1);
-    }
-  }
+    return { reply: reply.trim(), error: redact(error).slice(0, 200) };
+  };
 
-  // Smoke test fallback (if not disabled)
-  if (noFallback) {
-    console.log('PASS smoke-fallback: skipped under --no-fallback');
-  } else {
+  for (const [label, agent] of [['smoke-primary', 'forgetrail-inline-primary'], ['smoke-fallback', 'forgetrail-inline-fallback']]) {
+    if (!created.includes(agent)) {
+      console.log(`SKIP ${label}: ${agent} not created`);
+      continue;
+    }
     try {
-      const { data: session } = await client.sessions.create({
-        agent: { name: 'forgetrail-inline-fallback' }
-      });
-      const stream = await client.sessions.createTurnStream(session.id, {
-        input: [{ type: 'user.message', content: 'Reply with the single word: ready' }]
-      });
-
-      let reply = '';
-      for await (const chunk of stream) {
-        const event = (chunk as any)?.data ?? chunk;
-        if (event?.type === 'model.message.delta') {
-          reply += (event as any).content ?? '';
-        }
-      }
-      if (reply.toLowerCase().includes('ready')) {
-        console.log('PASS smoke-fallback');
+      const { reply, error } = await smoke(agent);
+      if (label === 'smoke-primary' && breakPrimary) {
+        pass(label, `(failed as intended under --break-primary: ${error || reply || 'no reply'})`);
+      } else if (reply.toLowerCase().includes('ready')) {
+        pass(label);
       } else {
-        console.log(`WARN smoke-fallback: reply was "${reply.trim()}"`);
+        fail(label, error ? error : `unexpected reply "${reply}"`);
       }
     } catch (err: any) {
-      console.log(`WARN smoke-fallback: ${err.message}`);
+      if (label === 'smoke-primary' && breakPrimary) pass(label, `(failed as intended: ${err.message})`);
+      else fail(label, err.message);
     }
   }
 
@@ -352,8 +348,8 @@ async function run() {
     await stopMcpServer().catch(() => {});
   }
 
-  console.log('Setup finished successfully.');
-  process.exit(0);
+  console.log(failures === 0 ? 'Setup finished successfully.' : `Setup finished with ${failures} failure(s).`);
+  process.exit(failures === 0 ? 0 : 1);
 }
 
 run().catch(async (err) => {

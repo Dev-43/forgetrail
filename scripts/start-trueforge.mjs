@@ -36,9 +36,26 @@ const defaultAllowedHosts = [
   'openrouter.ai',
   'api.anthropic.com'
 ];
+// Also allow the host of every OpenAI-compatible provider in config/models.json, so adding a
+// provider there (e.g. NVIDIA's integrate.api.nvidia.com) does not get blocked by TrueForge.
+const modelsConfigPath = resolve(process.cwd(), 'config', 'models.json');
+if (existsSync(modelsConfigPath)) {
+  try {
+    const cfg = JSON.parse(readFileSync(modelsConfigPath, 'utf8'));
+    for (const p of cfg.providers ?? []) {
+      if (p.baseUrl) {
+        const host = new URL(p.baseUrl).hostname;
+        if (!defaultAllowedHosts.includes(host)) defaultAllowedHosts.push(host);
+      }
+    }
+  } catch (err) {
+    console.warn(`Could not read provider hosts from config/models.json: ${err.message}`);
+  }
+}
 if (!envVars['OUTBOUND_URL_ALLOWED_HOSTS']) {
   envVars['OUTBOUND_URL_ALLOWED_HOSTS'] = JSON.stringify(defaultAllowedHosts);
 }
+console.log(`Outbound hosts allowed: ${JSON.parse(envVars['OUTBOUND_URL_ALLOWED_HOSTS']).join(', ')}`);
 envVars['SQLITE_PATH'] = resolve(process.cwd(), 'forge.sqlite');
 
 console.log('Starting TrueForge 0.184.2 on http://localhost:8790...');

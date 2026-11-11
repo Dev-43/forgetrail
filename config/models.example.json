@@ -6,14 +6,36 @@
       "apiKeyEnv": "GEMINI_API_KEY"
     },
     {
-      "name": "secondary-provider",
+      "name": "groq",
       "type": "openai-compatible",
       "baseUrl": "https://api.groq.com/openai/v1",
-      "apiKeyEnv": "SECONDARY_API_KEY"
+      "apiKeyEnv": "SECONDARY_API_KEY",
+      "models": [
+        "qwen/qwen3.8-27b"
+      ]
+    },
+    {
+      "name": "nvidia",
+      "type": "openai-compatible",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKeyEnv": "NVIDIA_API_KEY",
+      "models": [
+        {
+          "id": "mistralai/mistral-large-4-1t-a52b",
+          "contextLength": 131072,
+          "maxOutputTokens": 16384
+        },
+        {
+          "id": "deepseek-ai/deepseek-v4.1-flash",
+          "contextLength": 131072,
+          "maxOutputTokens": 16384
+        }
+      ]
     }
   ],
   "models": {
-    "primary": "google-gemini/gemini-3-1-flash-lite",
-    "fallback": "secondary-provider/llama-3.3-70b-versatile"
+    "primary": "google-gemini/gemini-3-6-flash",
+    "fallback": "groq/qwen/qwen3.8-27b",
+    "agentFallback": "nvidia/mistralai/mistral-large-4-1t-a52b"
   }
 }

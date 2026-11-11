@@ -1,3 +1,4 @@
+import { getFlaskDir, getDebugFlagSelection } from './flaskDir';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { runContext } from '../src/mcp/runContext';
@@ -5,7 +6,7 @@ import { startMcpServer, stopMcpServer } from '../src/mcp/server';
 import { runController, cancelRun, setReviewPresenter, getRunState } from '../src/trueforge/runController';
 import { ReviewPresenter, ReviewRequest, ReviewDecision, RunRequest } from '../src/shared/contracts';
 
-const flaskDir = path.resolve(process.cwd(), 'dev/forge-spike/flask');
+const flaskDir = getFlaskDir();
 
 class HangingReviewPresenter implements ReviewPresenter {
   public receivedReview = false;
@@ -41,12 +42,7 @@ async function testCancelDuringReview(): Promise<boolean> {
     kind: 'inline',
     instruction: "Treat 'off' and 'n' as false, and update docstring.",
     workspaceRoot: flaskDir,
-    selection: {
-      path: 'src/flask/helpers.py',
-      startLine: 28,
-      endLine: 33,
-      text: "    value = os.environ.get(FLASK_DEBUG, None)\r\n\r\n    if not value:\r\n        return False\r\n\r\n    return value.lower() not in {\"0\", \"false\", \"no\"}",
-    },
+    selection: getDebugFlagSelection(flaskDir),
   };
 
   let cancelEventEmitted = false;
