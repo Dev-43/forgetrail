@@ -1,30 +1,22 @@
 # 5. Model Setup
 
-### Models Used & Evaluation Matrix
+### Models used
 
-| Role | Provider & Model Identifier | Hosting / Infrastructure | Cost | Rate Limits & Quotas | Observed Behavior |
-|---|---|---|---|---|---|
-| **Primary Model** | `google-gemini/gemini-2.5-flash` (or `gemini-flash-lite-latest`) | Google AI Studio cloud endpoints | Free Tier ($0.00) | 15 RPM, 250k TPM, 500 RPD | Fast turn latency (< 3s), reliable multi-file hunk formatting, respects tool calling schemas. |
-| **Fallback Model** | `google-gemini/gemini-2.0-flash` (via secondary backup key) | Google AI Studio cloud endpoints | Free Tier ($0.00) | 15 RPM, 250k TPM, 500 RPD | Immediate failover target when primary key hits 429 quota exhaustion or 401 auth failure. |
-| **Candidate Provider** | `nvidia/meta/llama-3.1-70b-instruct` | NVIDIA NIM Developer Cloud | Free Tier ($0.00) | 5000 credits | `GET /v1/models` returns HTTP 200, but developer tier returns HTTP 404 Function Not Found on completion routes. |
+All models are configured in TrueForge (catalog provider or OpenAI-compatible endpoint) by `npm run setup` from `config/models.json`; the extension never calls a provider.
 
-*Total LLM inference expenditure during entire build, test, and verification phases: **$0.00**.*
+| Role (agent) | Model | Where it runs | Cost |
+|---|---|---|---|
+| Primary, inline + agent mode (`forgetrail-*-primary`) | `google-gemini/gemini-3-6-flash` | Google AI Studio, free tier | $0.00 |
+| Inline fallback (`forgetrail-inline-fallback`) | `qwen/qwen3.8-27b` | Groq, OpenAI-compatible endpoint, free tier | $0.00 |
+| Agent-mode fallback (`forgetrail-agent-fallback`) | `mistralai/mistral-large-4-1t-a52b` | NVIDIA build.nvidia.com, OpenAI-compatible endpoint, free credits | $0.00 |
+| Used during development | `google-gemini/gemini-3-1-flash-lite` | Google AI Studio, free tier | $0.00 |
 
----
+Model probe on 2026-11-11 (plain reply + one `read_file` tool call through TrueForge): `gemini-3-5-flash-lite`, `gemini-3-5-flash`, `gemini-3-6-flash` and `gemini-flash-lite-latest` passed in 2–10 s; `gemini-3-7-flash` hit TrueForge's 20 s header timeout; `gemini-3-8-flash` returned 503 (high demand); `gemini-3-1-flash-lite`, `gemini-flash-latest` and `gemini-3-1-pro-preview` returned 429 (free-tier quota). On Groq, `llama-3.3-70b-versatile` is no longer offered and `openai/gpt-oss-120b` fails in TrueForge on multi-turn requests (`reasoning_content` rejected), so `qwen/qwen3.8-27b` is used.
 
-### The 60-Second Model Swap Procedure
+*Total inference cost across build and testing: $0.00 (free tiers only).*
 
-Per architectural rule R11, ForgeTrail contains **zero model names or provider strings** inside `src/`. Switching models is completely configuration-driven:
+### How a user switches models
 
-1. **Add Key to `.env`**:
-   ```env
-   NEW_PROVIDER_API_KEY=your_key_here
-   ```
-2. **Register Provider in `config/models.json`**:
-   Add the provider catalog configuration with endpoint URL and model identifiers.
-3. **Execute Setup CLI**:
-   ```bash
-   npm run setup -- --primary provider-name/model-name
-   ```
-4. **Verification**:
-   `setup.ts` automatically contacts TrueForge, registers the provider, upserts the primary agent definition, and runs `smoke-primary`. Once `PASS smoke-primary` appears, the model is fully active.
+1. Put the provider's key in `.env` (any variable name).
+2. In `config/models.json`, add or edit an entry in `providers` (`builtin` for a TrueForge catalog provider; `openai-compatible` with `baseUrl` and the model ids otherwise) and point `models.primary` / `models.fallback` / `models.agentFallback` at `<provider>/<model id>`.
+3. Run `npm run setup` (or, without editing the file, `npm run setup -- --primary <provider>/<model id>`). Setup registers the providers, creates the four agents and prints `PASS smoke-primary` / `PASS smoke-fallback` when both models answer.
