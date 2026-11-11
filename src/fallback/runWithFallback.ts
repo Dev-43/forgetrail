@@ -1,4 +1,5 @@
 import { RunRequest, RunResult } from '../shared/contracts';
+import { BACKOFF_MS, MAX_ATTEMPTS } from '../shared/limits';
 import { S_NO_FALLBACK } from '../ui/notifications';
 import { classifyError } from './classifyError';
 import { runController } from '../trueforge/runController';
@@ -15,6 +16,12 @@ export interface FallbackOptions {
   executor?: (agentName: string, request: RunRequest, extraInstruction?: string) => Promise<RunResult>;
 }
 
+/** First line of a provider/harness error, trimmed, for the user-facing message. */
+function shortDetail(message: string): string {
+  const firstLine = (message || '').split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
+  return firstLine.trim().slice(0, 200);
+}
+
 /**
  * Runs an agent or inline instruction with resilient retry and fallback model switching per A-5 and C-20.
  */
@@ -25,16 +32,17 @@ export async function runWithFallback(
   const isInline = request.kind === 'inline';
   const primaryAgent = options.primaryAgent ?? (isInline ? 'forgetrail-inline-primary' : 'forgetrail-agent-primary');
   const fallbackAgent = options.fallbackAgent ?? (isInline ? 'forgetrail-inline-fallback' : 'forgetrail-agent-fallback');
-  const maxAttempts = options.maxAttempts ?? 3;
-  const backoffMs = options.backoffMs ?? [15000, 30000];
-  const sleep = options.sleepFn ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
+  const backoffMs = options.backoffMs ?? [...BACKOFF_MS];
+  const sleep = options.sleepFn ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const execute = options.executor ?? ((agent, req, extra) => runController.executeRun(agent, req, extra));
 
   let currentAgent = primaryAgent;
   let attempts = 0;
   let rateLimitRetries = 0;
   let transientRetries = 0;
-  let extraPrompt = '';
+  let fallbackRateLimitRetries = 0;
+  let strict = false;
   let lastResult: RunResult = {
     status: 'error',
     errorKind: 'no-fallback',
@@ -42,144 +50,122 @@ export async function runWithFallback(
     appliedCount: 0,
   };
 
+  // Hunks already written by earlier attempts; the next attempt is told not to redo them (C-20)
   const appliedHistory: string[] = request.appliedSoFar ? [...request.appliedSoFar] : [];
+  let totalApplied = 0;
+
+  const switchToFallback = (reason: string): void => {
+    runController.emitEvent({
+      type: 'model.switched',
+      runId: runController.getActiveRunId() ?? 'fallback',
+      from: currentAgent,
+      to: fallbackAgent,
+      reason,
+    });
+    currentAgent = fallbackAgent;
+  };
+
+  const giveUp = (result: RunResult): RunResult => {
+    const detail = shortDetail(result.message);
+    const message = detail ? `${S_NO_FALLBACK} (${detail})` : S_NO_FALLBACK;
+    runController.emitEvent({
+      type: 'run.error',
+      runId: runController.getActiveRunId() ?? 'fallback',
+      kind: 'no-fallback',
+      message,
+    });
+    return { status: 'error', errorKind: 'no-fallback', message, appliedCount: totalApplied, appliedSummaries: [...appliedHistory] };
+  };
 
   while (attempts < maxAttempts) {
     attempts++;
 
-    // Prepare request with already-applied hunks if switching/restarting
-    const currentRequest: RunRequest = {
-      ...request,
-      appliedSoFar: [...appliedHistory],
-    };
+    const currentRequest: RunRequest = { ...request, appliedSoFar: [...appliedHistory] };
 
-    if (appliedHistory.length > 0 && currentAgent === fallbackAgent) {
-      const alreadyAppliedNotice = `\nALREADY APPLIED:\n${appliedHistory.join('\n')}\nDo not re-apply these changes.`;
-      extraPrompt = extraPrompt ? `${extraPrompt}\n${alreadyAppliedNotice}` : alreadyAppliedNotice;
+    let extraPrompt = strict ? STRICT_ADDENDUM : '';
+    if (appliedHistory.length > 0) {
+      extraPrompt += `\nALREADY APPLIED:\n${appliedHistory.join('\n')}\nDo not re-apply these changes.`;
     }
 
-    const result = await execute(currentAgent, currentRequest, extraPrompt);
+    const result = await execute(currentAgent, currentRequest, extraPrompt || undefined);
     lastResult = result;
+    totalApplied += result.appliedCount ?? 0;
+    if (Array.isArray(result.appliedSummaries)) {
+      appliedHistory.push(...result.appliedSummaries);
+    }
 
     if (result.status === 'done') {
-      return result;
+      return { ...result, appliedCount: totalApplied, appliedSummaries: [...appliedHistory] };
     }
-
     if (result.status === 'cancelled') {
-      return result;
+      return { ...result, appliedCount: totalApplied, appliedSummaries: [...appliedHistory] };
     }
 
-    // Classify error condition
     const errorType = classifyError(result.message, result.errorKind, result.status);
-
     if (errorType === 'cancelled') {
       return result;
     }
 
-    // If fallback agent itself failed on a model error, terminate with no-fallback
+    // Failures on the fallback agent: back off on rate limits, otherwise there is nothing left to try
     if (currentAgent === fallbackAgent) {
-      return {
-        status: 'error',
-        errorKind: 'no-fallback',
-        message: result.message || S_NO_FALLBACK,
-        appliedCount: result.appliedCount,
-      };
+      if ((errorType === 'rate-limit' || errorType === 'transient') && fallbackRateLimitRetries < backoffMs.length) {
+        const waitTime = backoffMs[fallbackRateLimitRetries];
+        fallbackRateLimitRetries++;
+        attempts--; // rate-limit retries do not consume attempt budget
+        await sleep(waitTime);
+        continue;
+      }
+      return giveUp(result);
     }
 
-    // Handle primary agent failures
     switch (errorType) {
       case 'unreachable':
       case 'auth':
-      case 'model-not-found': {
-        // Immediate switch to fallback agent with normal prompt
-        runController.emitEvent({
-          type: 'model.switched',
-          runId: runController.getActiveRunId() ?? 'fallback',
-          from: currentAgent,
-          to: fallbackAgent,
-          reason: `Primary model unavailable: ${errorType}`,
-        });
-        currentAgent = fallbackAgent;
-        extraPrompt = '';
+      case 'model-not-found':
+        switchToFallback(`Primary model unavailable: ${errorType}`);
+        strict = false;
         continue;
-      }
 
-      case 'rate-limit': {
-        // Backoff retries on same agent before switching
+      case 'rate-limit':
         if (rateLimitRetries < backoffMs.length) {
           const waitTime = backoffMs[rateLimitRetries];
           rateLimitRetries++;
-          attempts--; // rate-limit retries do not consume attempt budget
+          attempts--;
           await sleep(waitTime);
           continue;
         }
-
-        // Exhausted rate limit retries -> switch to fallback
-        runController.emitEvent({
-          type: 'model.switched',
-          runId: runController.getActiveRunId() ?? 'fallback',
-          from: currentAgent,
-          to: fallbackAgent,
-          reason: 'Rate limit exhausted on primary model',
-        });
-        currentAgent = fallbackAgent;
-        extraPrompt = '';
+        switchToFallback('Rate limit exhausted on primary model');
+        strict = false;
         continue;
-      }
 
-      case 'transient': {
-        // Retry once on transient error before switching
+      case 'transient':
         if (transientRetries < 1) {
           transientRetries++;
-          attempts--; // transient retries do not consume attempt budget
+          attempts--;
           await sleep(backoffMs[0]);
           continue;
         }
-
-        // Switch to fallback
-        runController.emitEvent({
-          type: 'model.switched',
-          runId: runController.getActiveRunId() ?? 'fallback',
-          from: currentAgent,
-          to: fallbackAgent,
-          reason: 'Transient errors on primary model',
-        });
-        currentAgent = fallbackAgent;
-        extraPrompt = '';
+        switchToFallback('Transient errors on primary model');
+        strict = false;
         continue;
-      }
 
       case 'tool-mismatch':
       case 'region':
       case 'no-edit':
       case 'unknown':
-      default: {
+      default:
         if (attempts === 1) {
-          // Attempt 2: retry same agent with STRICT addendum
-          extraPrompt = STRICT_ADDENDUM;
+          strict = true; // attempt 2: same agent, STRICT addendum
           continue;
-        } else if (attempts === 2) {
-          // Attempt 3: switch to fallback agent with STRICT addendum
-          runController.emitEvent({
-            type: 'model.switched',
-            runId: runController.getActiveRunId() ?? 'fallback',
-            from: currentAgent,
-            to: fallbackAgent,
-            reason: `Repeated proposal failure (${errorType})`,
-          });
-          currentAgent = fallbackAgent;
-          extraPrompt = STRICT_ADDENDUM;
+        }
+        if (attempts === 2) {
+          switchToFallback(`Repeated proposal failure (${errorType})`);
+          strict = true; // attempt 3: fallback agent, STRICT addendum
           continue;
         }
         break;
-      }
     }
   }
 
-  return {
-    status: 'error',
-    errorKind: 'no-fallback',
-    message: lastResult.message || S_NO_FALLBACK,
-    appliedCount: lastResult.appliedCount,
-  };
+  return giveUp(lastResult);
 }

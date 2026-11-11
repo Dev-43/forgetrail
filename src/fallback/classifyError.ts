@@ -57,11 +57,17 @@ export function classifyError(
     return 'unreachable';
   }
 
+  const lowerMsg = message.toLowerCase();
   if (
     message.includes('401') ||
     message.includes('403') ||
-    message.toLowerCase().includes('unauthorized') ||
-    message.toLowerCase().includes('forbidden')
+    lowerMsg.includes('unauthorized') ||
+    lowerMsg.includes('unauthenticated') ||
+    lowerMsg.includes('forbidden') ||
+    lowerMsg.includes('api_key_invalid') ||
+    lowerMsg.includes('invalid_api_key') ||
+    /api[ _-]?key[^.]{0,40}(invalid|not valid|expired|incorrect)/.test(lowerMsg) ||
+    /(invalid|incorrect|expired)[^.]{0,20}api[ _-]?key/.test(lowerMsg)
   ) {
     return 'auth';
   }
