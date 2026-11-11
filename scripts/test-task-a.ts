@@ -1,3 +1,4 @@
+import { getFlaskDir } from './flaskDir';
 import * as path from 'path';
 import * as fs from 'fs';
 import { runContext } from '../src/mcp/runContext';
@@ -7,7 +8,7 @@ import { undoStore } from '../src/apply/undoStore';
 import { ReviewRequest, ReviewDecision, ReviewPresenter, RunRequest } from '../src/shared/contracts';
 import { execSync } from 'child_process';
 
-const flaskDir = path.resolve(process.cwd(), 'dev/forge-spike/flask');
+const flaskDir = getFlaskDir();
 const relFilePath = 'src/flask/helpers.py';
 const absFilePath = path.join(flaskDir, relFilePath);
 

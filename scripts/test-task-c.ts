@@ -1,3 +1,4 @@
+import { getFlaskDir, getDebugFlagSelection } from './flaskDir';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { runContext } from '../src/mcp/runContext';
@@ -6,7 +7,7 @@ import { runWithFallback } from '../src/fallback/runWithFallback';
 import { runController, setReviewPresenter } from '../src/trueforge/runController';
 import { ReviewPresenter, ReviewRequest, ReviewDecision, RunRequest } from '../src/shared/contracts';
 
-const flaskDir = path.resolve(process.cwd(), 'dev/forge-spike/flask');
+const flaskDir = getFlaskDir();
 
 class AutoRejectPresenter implements ReviewPresenter {
   public presentedCount = 0;
@@ -51,12 +52,7 @@ async function runTaskCCase1(): Promise<boolean> {
     kind: 'inline',
     instruction: "Treat 'off' and 'n' as false, and update docstring.",
     workspaceRoot: flaskDir,
-    selection: {
-      path: 'src/flask/helpers.py',
-      startLine: 28,
-      endLine: 33,
-      text: "    value = os.environ.get(FLASK_DEBUG, None)\r\n\r\n    if not value:\r\n        return False\r\n\r\n    return value.lower() not in {\"0\", \"false\", \"no\"}",
-    },
+    selection: getDebugFlagSelection(flaskDir),
   };
 
   const startTime = Date.now();
@@ -100,12 +96,7 @@ async function runTaskCCase2(): Promise<boolean> {
     kind: 'inline',
     instruction: "Treat 'off' and 'n' as false, and update docstring.",
     workspaceRoot: flaskDir,
-    selection: {
-      path: 'src/flask/helpers.py',
-      startLine: 28,
-      endLine: 33,
-      text: "    value = os.environ.get(FLASK_DEBUG, None)\r\n\r\n    if not value:\r\n        return False\r\n\r\n    return value.lower() not in {\"0\", \"false\", \"no\"}",
-    },
+    selection: getDebugFlagSelection(flaskDir),
   };
 
   const startTime = Date.now();

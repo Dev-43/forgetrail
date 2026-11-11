@@ -32,6 +32,13 @@ if (existsSync(venvWin)) {
   pythonExe = venvUnix;
 }
 
+/** `git status --porcelain` lines for FLASK_DIR, ignoring the untracked .venv folder. */
+function changedFiles(): string[] {
+  return execSync('git status --porcelain', { cwd: flaskDir, encoding: 'utf8' })
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !/^\?\? \.venv\/?$/.test(l.trim()));
+}
+
 const target = process.argv[2]?.toLowerCase() || 'a';
 
 if (target === 'a') {
@@ -61,8 +68,8 @@ if (target === 'a') {
 
   // 1. git diff --stat touches >= 3 files
   try {
-    const statOut = execSync('git diff --stat', { cwd: flaskDir, encoding: 'utf8' });
-    const touchedFiles = statOut.split('\n').filter(l => l.includes('|')).length;
+    // Count modified AND newly created files (git diff --stat ignores untracked ones); the venv is not a change
+    const touchedFiles = changedFiles().length;
     if (touchedFiles >= 3) {
       console.log(`PASS 1: git diff touches ${touchedFiles} files (>= 3)`);
     } else {
@@ -141,7 +148,7 @@ if (target === 'a') {
 } else if (target === 'c') {
   console.log(`Running Task C (workspace clean check) in ${flaskDir}...`);
   try {
-    const out = execSync('git status --porcelain', { cwd: flaskDir, encoding: 'utf8' }).trim();
+    const out = changedFiles().join('\n');
     if (out.length === 0) {
       console.log('PASS workspace unchanged');
       process.exit(0);
