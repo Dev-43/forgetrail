@@ -317,6 +317,97 @@ Entry format (copy this):
 
 (Add D-049 onward below. Template above.)
 
+> D-049 to D-057 come from an end-to-end test pass on 2026-11-11/12 (tester: Meghana Agnur, with the Claude Code agent; full report with bug IDs B0, R1… kept outside the repo). The bugs were found by running the compiled extension in VS Code and the task scripts; the fixes are in commits `46cfcb2` … `c3d3d63` on `main`. Module owners: please read the entry for your module and update your Part 3 note in your own words.
+
+### D-049 Fix B0: load the TrueForge SDK with a real ESM import in the compiled extension
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Task: C-3 (fix) · Commit `46cfcb2`
+- Decision: `src/trueforge/client.ts` loads `@truefoundry/trueforge-sdk` through `new Function('s', 'return import(s)')` so `tsc` (module `commonjs`) cannot turn the dynamic `import()` into `require()`.
+- Why: in VS Code every run failed with "exports is not defined in ES module scope": the SDK is `"type": "module"` and its `dist/cjs` has no `package.json`, so the `require()`d CJS files were loaded as ESM. The task scripts never saw this because `tsx` runs the TypeScript source and keeps the real `import()`. Every earlier PASS (D-036, D-044, D-047) came from `tsx` scripts only.
+- Alternatives rejected: switching the whole extension to ESM (VS Code extension host + large change two days before submission); bundling with esbuild (new build step).
+- Rubric: Gate (loop on TrueForge from the editor), and A1/A2/A3/B3 as shown in the video.
+- Call line: "The compiled extension could not load the ESM-only SDK; we keep a real dynamic import that the TypeScript compiler cannot rewrite."
+
+### D-050 Fix R1–R6: Accept applies, one review event per hunk, safe create and undo
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Tasks: C-4, C-16, U-2 (fix) · Commits `5bc2185`, `2bc388e`
+- Decision:
+  1. R1: `runController` sets `baseVersion` to the open document's current version when it validates a proposal (0 when the file is not open / headless). Before, it was always 0, so Accept turned into a stale-reject ("skipped a hunk because … changed") whenever the file was open, which is always the case in Task A.
+  2. R2: only the run controller emits `review.requested`, after validation, for edits that reach the review UI (the event mapper emitted it too, so hunks showed twice and the pending count never reached 0).
+  3. R3: a create (`old_text` empty) on an existing file is auto-denied with `E_FILE_EXISTS`, checked before approval and again at apply time.
+  4. R4: snapshots record `createdFile`; undo deletes a created file instead of leaving an empty one.
+  5. R5: applied line range comes from where `old_text` matched (CRLF aware), not `indexOf(newText)`.
+  6. R6: automatic rejections (`REJECTED_AUTO…`, `ERROR …`) are sent to the model as-is, not wrapped in `REJECTED_BY_USER`.
+- Why: UI test T1 (Task A in VS Code): both accepted hunks reached TrueForge as `deny REJECTED_BY_USER: REJECTED_AUTO: … changed since you read it`; file unchanged. Unit tests for R3–R5 added in `test/applyUndo.test.ts`; R1 still needs the UI retest (D-057).
+- Rubric: A1 (10), B2 (10).
+- Call line: "Accept checks the document version recorded when the hunk was validated, so a hunk is only refused when the file really changed under it."
+
+### D-051 Fix E1–E7, F4, B1: run events, cancel and inline-edit control
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Tasks: C-3, C-19, U-3 (fix) · Commit `5bc2185`
+- Decision:
+  1. E1: error text comes from `state.message` (panel and status bar showed "Unknown turn failure").
+  2. E2: `run.finished` / `run.error` are emitted once by the run controller at the real end of an attempt (they fired when a turn only paused for approval).
+  3. E3: new command "ForgeTrail: Cancel Run"; clicking the status bar item during a run cancels it, so inline edits can be cancelled too.
+  4. E4: new `plan.update` event (contract C8) for complete `PLAN:` lines, so the panel's plan card fills.
+  5. E5/E6/E7: cancel is tracked per run id, a cancelled run returns `cancelled` (it returned `done`), `discarded` = undecided hunks of the current batch, and `runContext.endRun()` clears the active run id after every run.
+  6. F4: an inline run with zero proposals returns `no-edit`, so the strict retry and fallback of D-014 apply.
+  7. B1: added `Ctrl+K E` / `Cmd+K E` for Inline Edit; `Ctrl+Alt+E` is AltGr on many Windows layouts and did not fire.
+- Why: E1, E2, E5, E7 seen in test runs; E3, E4, E6, F4 found by reading the code.
+- Rubric: A1 (10), A3 (10), B1 (15, plan card visible).
+- Call line: "A run ends exactly once with its true status; Stop works for inline edits and agent runs alike."
+
+### D-052 Fix F1–F3, F5, F6: fallback policy (constant changed: BACKOFF_MS)
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Task: A-5, C-20 (fix) · Commit `a4090a3`
+- Decision:
+  1. F1: "API key not valid", `API_KEY_INVALID`, "invalid api key" and "unauthenticated" classify as `auth`, so a broken primary key switches at once (it was retried twice first).
+  2. F2: rate-limit / transient errors on the fallback agent back off before giving up (the run ended at once).
+  3. F3: `RunResult.appliedSummaries` is filled; every later attempt gets the `ALREADY APPLIED:` list and applied counts add up across attempts (the list was never filled).
+  4. F5: backoff values now live in `src/shared/limits.ts`: `BACKOFF_MS` = **15 s / 30 s** (was 2 s / 4 s in `limits.ts` while `runWithFallback` hard-coded 15 s / 30 s). 15 s / 30 s kept because Gemini's per-minute window needs it.
+  5. F6: final failure shows `S_NO_FALLBACK` plus a one-line detail, emitted as `run.error` kind `no-fallback`; inline edit shows it without JSON or stack.
+- Why: Task C case 2 showed raw JSON ("NotFoundError … Agent not found"); case 1 retried the dead primary twice; Groq 429 ended the run. Tests added in `test/fallback.test.ts`.
+- Rubric: B3 (10).
+- Call line: "A bad key switches models immediately, rate limits back off, and the fallback is told which hunks are already applied."
+
+### D-053 Fix X1, X2: run_command allowlist and path guard (supersedes the matching rule of D-020)
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Task: C-2, C-15 (fix) · Commit `c399d31`
+- Decision: Supersedes D-020's matching rule (the allowlist itself is unchanged). The allowlist refuses any command containing `; & | < > \` $ ^ %` or a newline and matches whole words; it used `startsWith`, so `pytest && <anything>` ran without asking. `pathGuard` compares whole path segments; a sibling folder such as `C:/ws-evil` passed as inside `C:/ws`.
+- Why: found by reading the code; covered by new cases in `test/mcp.test.ts`.
+- Rubric: B2 (10) and the human-in-the-loop claim in the write-up.
+- Call line: "Only a plain allowlisted command runs without asking; anything chained or redirected goes to the user."
+
+### D-054 Setup reads config/models.json; working fallback models (supersedes D-012)
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Tasks: A-3, A-4 (fix) · Commit `ece811a`
+- Decision: Supersedes D-012. Primary is `google-gemini/gemini-3-6-flash`, inline fallback `groq/qwen/qwen3.8-27b`, agent fallback `nvidia/mistralai/mistral-large-4-1t-a52b`. `scripts/setup.ts` rewritten: registers every provider in `config/models.json` (builtin or any OpenAI-compatible endpoint, key by env-var name), sanitises model ids to TrueForge names, checks every response, deletes only `forgetrail-*` agents, `--break-primary` breaks only the primary's provider, new `--agent-fallback` flag, a fallback without a key falls back to the inline fallback with a WARN. `start-trueforge.mjs` allows the host of every configured `baseUrl` (S13: NVIDIA was blocked). `reset:flask` keeps `.venv`; `verify:b` counts new files; task scripts use `FLASK_DIR`.
+- Why: on a clean clone `npm run setup` failed (S1–S3): TrueForge rejects dotted model names (`llama-3.3-70b-versatile`), setup ignored the error, and Groq no longer offers that model; `gpt-oss-120b` fails in TrueForge (`reasoning_content`). `gemini-3-1-flash-lite` hit 429 quota on the test key. Model probe 2026-11-11 (reply + one `read_file` call through TrueForge): `gemini-3-6-flash` ~3.5 s OK; `gemini-3-5-flash` and `-lite` OK; `gemini-3-7-flash` header timeout; `gemini-3-8-flash` 503. Setup could not register the organisers' model on the call (S5), which the brief requires.
+- Alternatives rejected: Groq `openai/gpt-oss-120b` (TrueForge error), NVIDIA `kimi-k2.6` / `nemotron-3-super` (404), `glm-5.3-flash` / `minimax-m3.1-flash` (no answer in 60 s), `deepseek-v4.1-flash` (works but 32 s per reply).
+- Rubric: B3 (10), Gate (no single provider), shortlist-call model swap (Part 4 drill).
+- Call line: "Any OpenAI-compatible model is one entry in config/models.json and one setup command."
+
+### D-055 Tests runnable from a clean clone; write-up aligned with the brief
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Tasks: A-7, A-8 (fix) · Commits `babfd2b`, `8c2f1cb`
+- Decision: event samples moved into `test/fixtures/event-samples.json`; tests that need the git-ignored Flask clone are skipped (not failed) when it is missing; 15 new tests for the fixes (58 total). Write-up: scorecard has one row per judging criterion (video timestamps still TODO), "what we would do with another month" added, README / write-up / agents / config declare the same models; `docs/flask-setup.md` install line fixed (`pytest<9`; `tests/requirements.txt` does not exist).
+- Why: `eventMapper.test.ts` needed `dev/forge-spike/results/logs/05-event-samples.json`, which is not in the repo (the "49/49" in D-048 was only true on Devesh's machine); the old scorecard listed benchmark runs, which caps C2; latest pytest breaks Flask's `test_cli.py`.
+- Rubric: C2 (15).
+- Call line: "A clean clone gets 58/58 unit tests; the scorecard follows the judging criteria."
+
+### D-056 Fix S14: verify:b runs pytest and flask through the venv python
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Task: C-17 (fix) · Commit `c3d3d63`
+- Decision: `scripts/verify.ts` runs `<venv>/python.exe -m pytest` and `-m flask` instead of `.venv\Scripts\pytest.exe` / `flask.exe`.
+- Why: on Windows 11 with Smart App Control / Device Guard, the unsigned pip launcher `pytest.exe` was blocked ("blocked by your organization's Device Guard policy") while the signed `python.exe` runs. `verify:b` then reported "pytest failed" although all 60 tests passed, so every Task B run showed FAIL.
+- Rubric: A2 (10) evidence; anyone re-checking Task B on Windows.
+- Call line: "The verifier calls Python modules, not the launcher exes Windows may block."
+
+### D-057 Verification on the fixed code (M1–M3 re-run)
+- Date 2026-11-12 · Author Meghana Agnur with Claude Code · Tasks: C-8, C-17, C-21…C-23 (re-run)
+- Decision: re-ran every acceptance check on `main` after D-049…D-056. Results:
+  1. `npm run compile` clean; `npm test` 58/58; `npm run check` 11/11; `npm run setup` all PASS.
+  2. Task A ×3: **PASS 3/3** (NVIDIA Mistral primary: 43 s, 181 s, 150 s; 2 hunks each; `verify:a` = False; undo clean). One earlier PASS on `gemini-3-6-flash` (90 s).
+  3. Task B: **PASS 2/2** (NVIDIA Mistral primary: 614 s, 531 s; 7–8 hunks in `cli.py`, `tests/test_cli.py`, `docs/cli.rst`, `docs/api.rst`; 60 tests pass; masked JSON; `config` in `--help`; `undoRun` clean). Gemini free key: 0/3, the free tier for `gemini-3-6-flash` allows **20 requests/day** and one Task B attempt uses most of them.
+  4. Task C (`test:task-c`): **PASS both cases** (invalid key → `auth` → Groq at once, 3 fallback hunks rejected, clean, 61 s; no fallback → `no-fallback` in 0.19 s, clean).
+  5. Cancel (`test:cancel`): **PASS**, 76 ms, run returns `cancelled`, clean.
+- Why: earlier PASS results were from `tsx` scripts on code that could not run in VS Code (D-049) and with a broken Accept (D-050).
+- Not yet done: VS Code UI retest of the fixed code (manual script T1–T6: Accept applies, no duplicate hunks, plan card, inline cancel, friendly no-fallback text). Task B takes 9–10 min per run on NVIDIA, too slow for a live demo; for the video use a paid Gemini key or a faster model.
+- Rubric: A1, A2, A3, B2, B3 (evidence); C1 (video planning).
+- Call line: "All three tasks and cancel pass headless on the fixed code; Task B needs a model with more than 20 requests a day."
+
 ---
 
 ## Part 3 — Understanding notes (one per module; owner writes after it works)
@@ -377,6 +468,8 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-11 08:45 IST | Antigravity | Pranav | Tasks A-3, A-4, A-6, A-7, A-9, C-26: Setup resilience flags, model matrix, submission check, writeup sections, README | `scripts/setup.ts`, `scripts/test-models.ts`, `scripts/check-submission.ts`, `docs/*`, `README.md`, `DECISIONS.md` | None |
 | 2026-11-11 09:05 IST | Antigravity | Devesh & Pranav | Tasks C-21, C-22, C-23: Implement and execute Task C fallback and cancel verification test suites | `scripts/test-task-c.ts`, `scripts/test-cancel.ts`, `DECISIONS.md` | None |
 | 2026-11-11 09:40 IST | Antigravity | Devesh | Tasks A-8, C-24, C-25: Multi-branch integration (UI co-authored, API PR #2, core/engine), full verification on main, and write-up assembly | `docs/writeup/*`, `DECISIONS.md` | None |
+| 2026-11-11 19:40 – 2026-11-12 00:28 IST | Claude Code | Meghana Agnur | End-to-end test of the submission (scripts + VS Code UI), then fix the bugs found (B0, R1–R6, E1–E7, F1–F6, X1–X2, S1–S13, D1–D3) | `src/trueforge/*`, `src/apply/*`, `src/fallback/*`, `src/mcp/pathGuard.ts`, `src/mcp/runContext.ts`, `src/mcp/tools/runCommand.ts`, `src/inline/inlineEdit.ts`, `src/ui/statusBar.ts`, `src/shared/*`, `src/extension.ts`, `package.json`, `agents/*.json`, `config/models.example.json`, `.env.example`, `scripts/*`, `test/*`, `README.md`, `docs/*` | None |
+| 2026-11-12 14:25 – 16:30 IST | Claude Code | Meghana Agnur | Continue the test pass on the fixed code (Task A/B/C, cancel), fix S14, log D-049 to D-057 | `scripts/verify.ts`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
