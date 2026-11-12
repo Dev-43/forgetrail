@@ -83,10 +83,9 @@ if (target === 'a') {
 
   // 2. pytest tests/test_cli.py -q
   try {
-    const pytestBin = existsSync(resolve(flaskDir, '.venv', 'Scripts', 'pytest.exe'))
-      ? resolve(flaskDir, '.venv', 'Scripts', 'pytest.exe')
-      : 'pytest';
-    execSync(`"${pytestBin}" tests/test_cli.py -q`, { cwd: flaskDir, stdio: 'inherit' });
+    // `python -m pytest`, not .venv/Scripts/pytest.exe: Windows Smart App Control / Device Guard
+    // can block the unsigned pip launcher exes while allowing the signed python.exe.
+    execSync(`"${pythonExe}" -m pytest tests/test_cli.py -q`, { cwd: flaskDir, stdio: 'inherit' });
     console.log('PASS 2: pytest tests/test_cli.py -q passed');
   } catch (e: any) {
     console.log('FAIL 2: pytest tests/test_cli.py -q failed');
@@ -95,11 +94,8 @@ if (target === 'a') {
 
   // 3. flask --app <repo>/demo/app config
   try {
-    const flaskBin = existsSync(resolve(flaskDir, '.venv', 'Scripts', 'flask.exe'))
-      ? resolve(flaskDir, '.venv', 'Scripts', 'flask.exe')
-      : 'flask';
     const demoApp = resolve(process.cwd(), 'demo', 'app.py');
-    const configOut = execSync(`"${flaskBin}" --app "${demoApp}" config`, {
+    const configOut = execSync(`"${pythonExe}" -m flask --app "${demoApp}" config`, {
       cwd: flaskDir,
       encoding: 'utf8'
     });
@@ -128,10 +124,7 @@ if (target === 'a') {
 
   // 4. flask --help contains config
   try {
-    const flaskBin = existsSync(resolve(flaskDir, '.venv', 'Scripts', 'flask.exe'))
-      ? resolve(flaskDir, '.venv', 'Scripts', 'flask.exe')
-      : 'flask';
-    const helpOut = execSync(`"${flaskBin}" --help`, { cwd: flaskDir, encoding: 'utf8' });
+    const helpOut = execSync(`"${pythonExe}" -m flask --help`, { cwd: flaskDir, encoding: 'utf8' });
     const hasConfig = helpOut.split('\n').some(l => /^\s*config\s+/.test(l));
     if (hasConfig) {
       console.log('PASS 4: flask --help lists config command');
