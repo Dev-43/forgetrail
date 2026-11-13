@@ -60,7 +60,7 @@ export class UndoStore {
     let currentText = '';
     try {
       if (fs.existsSync(absPath)) {
-        currentText = fs.readFileSync(absPath, 'utf-8');
+        currentText = fs.readFileSync(absPath, 'utf-8').replace(/^﻿/, '');
       }
     } catch (err: any) {
       return { success: false, message: `Failed to read ${last.path}: ${err?.message}` };
@@ -97,7 +97,12 @@ export class UndoStore {
         }
         if (!wasCreate) {
           const doc = await vscode.workspace.openTextDocument(uri);
-          await doc.save();
+          const saved = await doc.save();
+          const onDisk = fs.readFileSync(absPath, 'utf-8').replace(/^﻿/, '');
+          if (!saved || onDisk !== last.fullTextBefore) {
+            // Same as applyHunk: if VS Code refuses the save, write the reverted text directly
+            fs.writeFileSync(absPath, last.fullTextBefore, 'utf-8');
+          }
         }
       } else {
         // Fallback for headless / tests

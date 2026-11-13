@@ -50,12 +50,53 @@ export function computeProposedText(currentText: string, request: ReviewRequest)
 }
 
 /**
+ * Per-file apply queue. TrueForge executes every approved propose_edit of one approval batch
+ * in parallel; without this, two hunks for the same file both read the old text, each replaced
+ * the whole document, and the last write won: an accepted hunk vanished, VS Code reported
+ * "Failed to save … the content of the file is newer", and undo snapshots no longer chained.
+ */
+const applyQueues = new Map<string, Promise<unknown>>();
+
+export function withFileLock<T>(absPath: string, task: () => Promise<T>): Promise<T> {
+  const key = path.resolve(absPath).toLowerCase();
+  const previous = applyQueues.get(key) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const settled = run.then(() => undefined, () => undefined);
+  applyQueues.set(key, settled);
+  settled.then(() => {
+    if (applyQueues.get(key) === settled) applyQueues.delete(key);
+  });
+  return run;
+}
+
+/** The open editor document for a path, if VS Code has it open. */
+function findOpenDocument(vscode: any, absPath: string): any | undefined {
+  if (!vscode?.workspace?.textDocuments) return undefined;
+  const target = path.resolve(absPath).toLowerCase();
+  return vscode.workspace.textDocuments.find(
+    (d: any) => d.uri?.scheme === 'file' && path.resolve(d.uri.fsPath).toLowerCase() === target
+  );
+}
+
+/**
  * Applies a single approved hunk to disk atomically via WorkspaceEdit and saves.
  * Precondition: executed only after user allow or auto-allow.
+ * Hunks for the same file are applied one at a time (see withFileLock).
  */
 export async function applyHunk(
   request: ReviewRequest,
   workspaceRoot = runContext.workspaceRoot
+): Promise<string> {
+  const guard = validateWorkspacePath(request.path, workspaceRoot);
+  if (!guard.ok) {
+    return guard.error!;
+  }
+  return withFileLock(guard.absolutePath!, () => applyHunkUnlocked(request, workspaceRoot));
+}
+
+async function applyHunkUnlocked(
+  request: ReviewRequest,
+  workspaceRoot: string
 ): Promise<string> {
   // Cancel guard check: if run cancelled, write NOTHING
   if (runContext.cancelled) {
@@ -81,7 +122,10 @@ export async function applyHunk(
     if (!fs.existsSync(absPath)) {
       return D_NOT_FOUND(relPath);
     }
-    currentText = fs.readFileSync(absPath, 'utf-8');
+    // The open document is what the user sees and what the WorkspaceEdit below replaces,
+    // so it is the base text; the disk is used only when the file is not open.
+    const openDoc = findOpenDocument(getVscode(), absPath);
+    currentText = openDoc ? openDoc.getText() : fs.readFileSync(absPath, 'utf-8');
 
     // Single occurrence check
     const isCrlf = currentText.includes('\r\n');
@@ -137,7 +181,14 @@ export async function applyHunk(
       const applied = await vscode.workspace.applyEdit(edit);
       if (applied) {
         const doc = await vscode.workspace.openTextDocument(uri);
-        await doc.save();
+        const saved = await doc.save();
+        const onDisk = fs.readFileSync(absPath, 'utf-8').replace(/^﻿/, '');
+        if (!saved || onDisk !== proposedText) {
+          // VS Code refused the save (e.g. "the content of the file is newer"). The buffer
+          // already holds proposedText, so write the same text to disk: disk and editor agree
+          // and the undo snapshot (fullTextAfter) matches what is on disk.
+          fs.writeFileSync(absPath, proposedText, 'utf-8');
+        }
       } else {
         // Fallback to disk write if applyEdit failed
         fs.writeFileSync(absPath, proposedText, 'utf-8');
