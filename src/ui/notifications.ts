@@ -30,6 +30,11 @@ export async function showAppliedNotification(count: number): Promise<void> {
   if (!vscode) return;
 
   const message = S_APPLIED(count);
+  if (count <= 0) {
+    // Nothing was applied, so there is nothing to undo: no Undo buttons
+    vscode.window.showInformationMessage(message);
+    return;
+  }
   const actionUndoLast = 'Undo last';
   const actionUndoRun = 'Undo run';
 

@@ -86,6 +86,24 @@
         "key": "ctrl+alt+n",
         "mac": "cmd+alt+n",
         "when": "resourceScheme == forgetrail-proposed"
+      },
+      {
+        "command": "forgetrail.inlineEdit",
+        "key": "ctrl+k ctrl+e",
+        "mac": "cmd+k cmd+e",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "forgetrail.review.accept",
+        "key": "ctrl+k ctrl+y",
+        "mac": "cmd+k cmd+y",
+        "when": "resourceScheme == forgetrail-proposed"
+      },
+      {
+        "command": "forgetrail.review.reject",
+        "key": "ctrl+k ctrl+n",
+        "mac": "cmd+k cmd+n",
+        "when": "resourceScheme == forgetrail-proposed"
       }
     ],
     "menus": {

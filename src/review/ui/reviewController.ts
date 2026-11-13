@@ -25,6 +25,8 @@ interface PendingReview {
 
 export class ReviewController implements ReviewPresenter {
   private activePending: PendingReview | undefined;
+  /** Open "Why?" box of a reject in progress, if any. */
+  private rejectPrompt: vscode.CancellationTokenSource | undefined;
   private queue: Array<{ request: ReviewRequest; resolve: (decision: ReviewDecision) => void }> = [];
   private disposables: vscode.Disposable[] = [];
 
@@ -161,6 +163,8 @@ export class ReviewController implements ReviewPresenter {
     }
 
     const { request, resolve, baseDoc } = this.activePending;
+    // Accepting closes a reason box left open by an earlier ✗ click
+    this.rejectPrompt?.cancel();
 
     // Staleness check (U-2 step 6)
     if (baseDoc && request.baseVersion !== undefined && baseDoc.version !== request.baseVersion) {
@@ -190,13 +194,34 @@ export class ReviewController implements ReviewPresenter {
       return;
     }
 
-    const { request, resolve } = this.activePending;
+    // One reason box at a time (a second ✗ click used to stack another box)
+    if (this.rejectPrompt) {
+      return;
+    }
 
-    const feedback = await vscode.window.showInputBox({
-      prompt: 'Why? (optional — sent to the agent)',
-      placeHolder: 'Reason for rejection',
-      ignoreFocusOut: true,
-    });
+    const pending = this.activePending;
+    const { request, resolve } = pending;
+
+    // The box is closed through this token when the run ends or the hunk is decided another way,
+    // so it can no longer stay open after the run has finished (bug U2).
+    const cts = new vscode.CancellationTokenSource();
+    this.rejectPrompt = cts;
+    let feedback: string | undefined;
+    try {
+      feedback = await vscode.window.showInputBox({
+        prompt: 'Why? (optional — sent to the agent)',
+        placeHolder: 'Reason for rejection',
+        ignoreFocusOut: true,
+      }, cts.token);
+    } finally {
+      cts.dispose();
+      this.rejectPrompt = undefined;
+    }
+
+    // Cancelled, disposed or accepted while the box was open: this rejection is void
+    if (this.activePending !== pending) {
+      return;
+    }
 
     this.closeCurrentDiffTabs(request.runId);
     this.activePending = undefined;
@@ -231,6 +256,7 @@ export class ReviewController implements ReviewPresenter {
   public dispose(runId: string): void {
     // Reject any pending or queued requests belonging to this run
     if (this.activePending && this.activePending.request.runId === runId) {
+      this.rejectPrompt?.cancel();
       const { request, resolve } = this.activePending;
       this.activePending = undefined;
       resolve({
