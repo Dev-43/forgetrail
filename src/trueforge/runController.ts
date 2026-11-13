@@ -19,8 +19,23 @@ import { AUTO_DENY_LIMIT_PER_FILE } from '../shared/limits';
 import { runContext } from '../mcp/runContext';
 import { validateWorkspacePath } from '../mcp/pathGuard';
 import { isCommandAutoAllowed, killActiveCommand } from '../mcp/tools/runCommand';
-import { createSession, sendTurn, sendApprovals, ToolApprovalInput, cancelSession, getTrueForgeUrl } from './client';
+import { createSession, sendTurn, sendTurnInputs, ToolApprovalInput, ToolResponseInput, cancelSession, getTrueForgeUrl } from './client';
 import { EventMapper } from './eventMapper';
+import { answerClientTool, createVsCodeAsker, QuestionAsker } from './clientTools';
+
+/** Cancellation source for an open "the agent asks" question, closed by cancelRun(). */
+let questionCts: { cancel(): void; dispose(): void; token: any } | null = null;
+
+function makeQuestionAsker(): QuestionAsker | undefined {
+  try {
+    const vscode = require('vscode');
+    questionCts?.dispose();
+    questionCts = new vscode.CancellationTokenSource();
+    return createVsCodeAsker(vscode, questionCts!.token);
+  } catch {
+    return undefined; // headless: questions are answered with NO_ANSWER
+  }
+}
 
 /**
  * Returns the current version of the open editor document for a workspace path,
@@ -199,6 +214,7 @@ export async function cancelRun(): Promise<void> {
   currentState = 'cancelling';
   cancelRequestedRunId = currentRunId;
   runContext.cancel();
+  questionCts?.cancel();
 
   // Terminate any running child process tree immediately (C-19)
   try {
@@ -333,6 +349,7 @@ export async function executeRun(
       }
 
       let pendingApprovalEvent: any = null;
+      let pendingResponseEvent: any = null;
 
       for await (const chunk of stream) {
         if (isCancelled()) {
@@ -351,6 +368,9 @@ export async function executeRun(
 
         if (rawEvent.type === 'tool.approval_required') {
           pendingApprovalEvent = rawEvent;
+        }
+        if (rawEvent.type === 'tool.response_required') {
+          pendingResponseEvent = rawEvent;
         }
 
         if (rawEvent.type === 'turn.done') {
@@ -371,30 +391,31 @@ export async function executeRun(
         }
       }
 
-      // If an approval is required, pause, resolve, and resume turn
-      if (pendingApprovalEvent && !isCancelled() && finalStatus !== 'error') {
+      // If approvals or client-tool answers are required, pause, resolve them all, and resume the turn
+      if ((pendingApprovalEvent || pendingResponseEvent) && !isCancelled() && finalStatus !== 'error') {
         currentState = 'awaiting_review';
-        const tcs = pendingApprovalEvent.toolCalls ?? pendingApprovalEvent.tool_calls ?? [];
+        const tcs = pendingApprovalEvent ? (pendingApprovalEvent.toolCalls ?? pendingApprovalEvent.tool_calls ?? []) : [];
+        const responseTcs = pendingResponseEvent ? (pendingResponseEvent.toolCalls ?? pendingResponseEvent.tool_calls ?? []) : [];
         undecidedProposals = tcs.length;
-        const threadId = pendingApprovalEvent.threadId ?? pendingApprovalEvent.thread_id ?? 'main';
+        const threadId =
+          pendingApprovalEvent?.threadId ?? pendingApprovalEvent?.thread_id ??
+          pendingResponseEvent?.threadId ?? pendingResponseEvent?.thread_id ?? 'main';
         const approvalsToSend: ToolApprovalInput[] = [];
+        const responsesToSend: ToolResponseInput[] = [];
 
         // Fetch session events once if any call is missing arguments
         let sessionEventsData: any[] | null = null;
 
-        for (let i = 0; i < tcs.length; i++) {
-          if (isCancelled()) {
-            break;
-          }
-          const tc = tcs[i];
+        /** Name and arguments of a pending tool call (from the stream, or from the session's events). */
+        const resolveCall = async (tc: any, defaultName: string): Promise<{ callId: string; toolName: string; args: any }> => {
           const callId = tc?.id;
           const sourceEventId = tc?.sourceEventId ?? tc?.source_event_id;
 
           const pending = mapper.getPendingCall(callId);
-          let toolName = pending?.name ?? tc?.name ?? tc?.toolName ?? tc?.function?.name ?? 'propose_edit';
+          let toolName = pending?.name ?? tc?.name ?? tc?.toolName ?? tc?.function?.name ?? defaultName;
           let args = pending?.args;
 
-          if (!args || Object.keys(args).length === 0) {
+          if (!args || Object.keys(args).length === 0 || toolName === 'unknown_tool') {
             if (!sessionEventsData) {
               try {
                 const eventsRes = await fetch(`${getTrueForgeUrl()}/api/v1/sessions/${sessionCreatedId}/events`);
@@ -423,7 +444,18 @@ export async function executeRun(
             }
           }
 
-          if (!args) args = {};
+          return { callId, toolName, args: args ?? {} };
+        };
+
+        for (let i = 0; i < tcs.length; i++) {
+          if (isCancelled()) {
+            break;
+          }
+          const tc = tcs[i];
+          const resolved = await resolveCall(tc, 'propose_edit');
+          const callId = resolved.callId;
+          const toolName = resolved.toolName;
+          const args = resolved.args;
 
           // Check tool type: run_command vs propose_edit
           if (toolName === 'run_command') {
@@ -519,13 +551,33 @@ export async function executeRun(
           }
         }
 
+        // Client-side tool calls (e.g. ask_user_question) must be answered in the same batch (R8)
+        if (responseTcs.length > 0 && !isCancelled() && keepRunning) {
+          const asker = makeQuestionAsker();
+          for (const tc of responseTcs) {
+            if (isCancelled()) break;
+            const resolved = await resolveCall(tc, 'unknown_tool');
+            const content = await answerClientTool(resolved.toolName, resolved.args, asker);
+            responsesToSend.push({ threadId, toolCallId: resolved.callId, content });
+          }
+        }
+
         if (!isCancelled()) {
           currentState = 'running';
         }
 
-        // Step 2: Resume TrueForge turn with all collected decisions
+        // Step 2: Resume TrueForge turn with all collected decisions and answers
         if (!isCancelled() && keepRunning) {
-          stream = await sendApprovals(sessionCreatedId, approvalsToSend);
+          try {
+            stream = await sendTurnInputs(sessionCreatedId, approvalsToSend, responsesToSend);
+          } catch (err: any) {
+            // Say plainly that the decisions did not reach TrueForge, instead of a bare HTTP error
+            const accepted = approvalsToSend.filter((a) => a.decision === 'allow').length;
+            throw new Error(
+              `TrueForge did not accept the review decisions (${err?.message ?? err}). ` +
+              `${accepted} accepted hunk(s) were NOT applied.`
+            );
+          }
         } else {
           keepRunning = false;
         }

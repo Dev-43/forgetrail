@@ -9,7 +9,7 @@ import { runContext } from './runContext';
 import { executeReadFile } from './tools/readFile';
 import { executeSearchWorkspace } from './tools/searchWorkspace';
 import { executeProposeEdit } from './tools/proposeEdit';
-import { executeRunCommand } from './tools/runCommand';
+import { executeRunCommand, commandShellNote } from './tools/runCommand';
 import { executeRepoOutline } from './tools/repoOutline';
 import { executeSuggestContext } from './tools/suggestContext';
 
@@ -91,7 +91,7 @@ function registerCoreTools(server: any): void {
 
   server.tool(
     'run_command',
-    'Runs a terminal command in the workspace root with a 120s timeout limit.',
+    `Runs a terminal command in the workspace root with a 120s timeout limit. Use it to run tests or the changed program, not to read or search files (use read_file / search_workspace). The project's .venv is first on PATH. ${commandShellNote()}`,
     {
       command: z.string().describe('Terminal command to execute in workspace root'),
     },

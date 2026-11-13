@@ -71,6 +71,13 @@ export interface ToolApprovalInput {
   reason?: string;
 }
 
+/** Answer to a client-side tool call (TrueForge `tool.response_required`, e.g. ask_user_question). */
+export interface ToolResponseInput {
+  threadId: string;
+  toolCallId: string;
+  content: string;
+}
+
 /**
  * Resumes turn with one or more user.tool_approval inputs using camelCase threadId and toolCallId (C-16).
  */
@@ -79,7 +86,21 @@ export async function sendApprovals(
   approvals: ToolApprovalInput[],
   baseUrl = getTrueForgeUrl()
 ): Promise<AsyncIterable<{ data: any }>> {
-  const inputs = approvals.map((a) => {
+  return sendTurnInputs(sessionId, approvals, [], baseUrl);
+}
+
+/**
+ * Resumes a paused turn. TrueForge requires ONE batch that resolves every pending call:
+ * approvals (user.tool_approval) and client-tool answers (user.tool_response) together,
+ * otherwise it answers 422 "Send batch must resolve all pending tool calls".
+ */
+export async function sendTurnInputs(
+  sessionId: string,
+  approvals: ToolApprovalInput[],
+  responses: ToolResponseInput[],
+  baseUrl = getTrueForgeUrl()
+): Promise<AsyncIterable<{ data: any }>> {
+  const approvalInputs = approvals.map((a) => {
     const approvalPayload: any = { status: a.decision };
     if (a.decision === 'deny' && a.reason) {
       approvalPayload.reason = a.reason;
@@ -91,8 +112,14 @@ export async function sendApprovals(
       approval: approvalPayload,
     };
   });
+  const responseInputs = responses.map((r) => ({
+    type: 'user.tool_response',
+    threadId: r.threadId,
+    toolCallId: r.toolCallId,
+    content: r.content,
+  }));
 
-  return createTurnStream(sessionId, inputs, baseUrl);
+  return createTurnStream(sessionId, [...approvalInputs, ...responseInputs], baseUrl);
 }
 
 /**
