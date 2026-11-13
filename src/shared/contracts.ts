@@ -77,8 +77,8 @@ export interface ReviewPresenter {
 export type AgentEvent =
   | { type: 'run.started'; runId: string; kind: 'inline' | 'agent'; instruction: string; agentName: string }
   | { type: 'text.delta'; runId: string; threadId: string; text: string }
-  | { type: 'tool.started'; runId: string; threadId: string; toolName: string; argsSummary: string }
-  | { type: 'tool.finished'; runId: string; toolName: string; ok: boolean; resultSummary: string }
+  | { type: 'tool.started'; runId: string; threadId: string; toolName: string; argsSummary: string; toolCallId?: string }
+  | { type: 'tool.finished'; runId: string; toolName: string; ok: boolean; resultSummary: string; toolCallId?: string }
   | { type: 'context.report'; runId: string; items: Array<{ path: string; reason: string; tokens: number }>; used: number; max: number }
   | { type: 'plan.update'; runId: string; steps: string[] }
   | { type: 'budget.update'; runId: string; used: number; max: number }

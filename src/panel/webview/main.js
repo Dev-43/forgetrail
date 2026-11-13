@@ -92,12 +92,15 @@
           <span class="trail-status">running...</span>
         `;
         toolTrailList.appendChild(item);
-        activeToolElements.set(toolName, item);
+        // Key by call id: several calls of the same tool can be running at once
+        activeToolElements.set(message.toolCallId || toolName, item);
         break;
       }
 
       case 'tool.finished': {
-        const item = activeToolElements.get(message.toolName);
+        const key = message.toolCallId || message.toolName;
+        const item = activeToolElements.get(key);
+        activeToolElements.delete(key);
         if (item) {
           const statusSpan = item.querySelector('.trail-status');
           if (statusSpan) {
@@ -133,7 +136,7 @@
             div.className = 'context-item';
             div.innerHTML = `
               <span class="context-path" title="Open file">${escapeHtml(item.path)}</span>
-              <span class="context-reason">${escapeHtml(item.reason)} (~${item.tokens ?? 100}t)</span>
+              <span class="context-reason">${escapeHtml(item.reason)}${item.tokens > 0 ? ` (~${item.tokens}t)` : ''}</span>
             `;
             const pathLink = div.querySelector('.context-path');
             if (pathLink) {
@@ -198,6 +201,7 @@
 
       case 'run.cancelled': {
         btnRun.disabled = false;
+        closeOpenToolRows();
         btnStop.disabled = true;
         stateBadge.textContent = 'CANCELLED';
         stateBadge.className = 'badge state-idle';
@@ -206,6 +210,7 @@
 
       case 'run.finished': {
         btnRun.disabled = false;
+        closeOpenToolRows();
         btnStop.disabled = true;
         stateBadge.textContent = 'DONE';
         stateBadge.className = 'badge state-idle';
@@ -214,6 +219,7 @@
 
       case 'run.error': {
         btnRun.disabled = false;
+        closeOpenToolRows();
         btnStop.disabled = true;
         stateBadge.textContent = 'ERROR';
         stateBadge.className = 'badge state-idle';
@@ -223,6 +229,18 @@
       }
     }
   });
+
+  /** Rows still marked running when the run ends never got a result: mark them, don't leave a spinner. */
+  function closeOpenToolRows() {
+    for (const item of activeToolElements.values()) {
+      const statusSpan = item.querySelector('.trail-status');
+      if (statusSpan) {
+        statusSpan.className = 'trail-status-failed';
+        statusSpan.textContent = '— no result';
+      }
+    }
+    activeToolElements.clear();
+  }
 
   function escapeHtml(str) {
     if (!str) return '';
