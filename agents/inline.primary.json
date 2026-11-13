@@ -2,6 +2,14 @@
   "name": "forgetrail-inline-primary",
   "description": "ForgeTrail inline editor agent powered by primary model",
   "manifest": {
+    "config": {
+      "ask_user_questions": {
+        "enabled": false
+      },
+      "generative_ui": {
+        "enabled": false
+      }
+    },
     "model": {
       "name": "google-gemini/gemini-3-6-flash"
     },

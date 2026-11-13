@@ -55,6 +55,40 @@ export function isCommandAutoAllowed(command: string): boolean {
 }
 
 /**
+ * Environment for run_command: the workspace's .venv (if any) first on the search path, so
+ * `python` / `pytest` are the project's, not the system's. On Windows the variable is usually
+ * spelled "Path"; spreading process.env loses its case-insensitivity, and adding a separate
+ * "PATH" key left the original "Path" in force (the venv was silently ignored, bug C3).
+ */
+export function buildCommandEnv(
+  workspaceRoot: string,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  const venvDir = path.join(workspaceRoot, '.venv');
+  const venvScripts = path.join(venvDir, 'Scripts');
+  const venvBin = path.join(venvDir, 'bin');
+  const extraPath = fs.existsSync(venvScripts) ? venvScripts : (fs.existsSync(venvBin) ? venvBin : '');
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  if (!extraPath) return env;
+
+  const pathKey = platform === 'win32'
+    ? (Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'Path')
+    : 'PATH';
+  const delimiter = platform === 'win32' ? ';' : ':';
+  env[pathKey] = `${extraPath}${delimiter}${env[pathKey] ?? ''}`;
+  env.VIRTUAL_ENV = venvDir;
+  return env;
+}
+
+/** Shell that run_command uses, stated in the tool description so the model writes matching commands (C2). */
+export function commandShellNote(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32'
+    ? 'Commands run in Windows cmd.exe: join commands with &&, never ;. Unix tools such as head, sed, ls, grep or /dev/null may not exist.'
+    : 'Commands run in /bin/sh.';
+}
+
+/**
  * MCP Tool: run_command (core connector)
  * Executes command in workspace root with COMMAND_TIMEOUT_MS limit.
  * Returns `EXIT <code>` followed by up to 200 lines of combined output.
@@ -71,12 +105,7 @@ export async function executeRunCommand(
     let killed = false;
     let timer: NodeJS.Timeout | null = null;
 
-    const venvScripts = path.join(workspaceRoot, '.venv', 'Scripts');
-    const venvBin = path.join(workspaceRoot, '.venv', 'bin');
-    const extraPath = fs.existsSync(venvScripts) ? venvScripts : (fs.existsSync(venvBin) ? venvBin : '');
-    const childEnv = extraPath
-      ? { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}` }
-      : process.env;
+    const childEnv = buildCommandEnv(workspaceRoot);
 
     const child = exec(
       params.command,
