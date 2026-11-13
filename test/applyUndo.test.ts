@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { computeProposedText, applyHunk } from '../src/apply/applyEdit';
+import { computeProposedText, applyHunk, withFileLock } from '../src/apply/applyEdit';
 import { undoStore } from '../src/apply/undoStore';
 import { runContext } from '../src/mcp/runContext';
 import { isCommandAutoAllowed } from '../src/mcp/tools/runCommand';
@@ -200,4 +200,50 @@ test('applyEdit: reported line range is correct on CRLF files', async () => {
   const res = await applyHunk(req, tempDir);
   assert.equal(res, 'APPLIED crlf.py lines 2-3 (hunk hunk_crlf).');
   assert.equal(fs.readFileSync(filePath, 'utf-8'), 'a = 1\r\nb = 20\r\nc = 30\r\n');
+});
+
+// --- P3: TrueForge executes the approved propose_edit calls of one batch in parallel ---
+
+test('applyEdit P3: hunks for the same file are applied one at a time; other files are not blocked', async () => {
+  const order: string[] = [];
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const fileA = path.join(tempDir, 'a.py');
+  const fileB = path.join(tempDir, 'b.py');
+  await Promise.all([
+    withFileLock(fileA, async () => { order.push('a1 start'); await sleep(40); order.push('a1 end'); }),
+    withFileLock(fileA.toUpperCase(), async () => { order.push('a2 start'); await sleep(5); order.push('a2 end'); }),
+    withFileLock(fileB, async () => { order.push('b start'); await sleep(5); order.push('b end'); }),
+  ]);
+  assert.ok(order.indexOf('a2 start') > order.indexOf('a1 end'), 'second hunk on a.py waits for the first');
+  assert.ok(order.indexOf('b end') < order.indexOf('a1 end'), 'b.py is not queued behind a.py');
+});
+
+test('applyEdit P3: a failing apply does not block the next one on the same file', async () => {
+  const f = path.join(tempDir, 'c.py');
+  await assert.rejects(withFileLock(f, async () => { throw new Error('boom'); }));
+  assert.equal(await withFileLock(f, async () => 'next ran'), 'next ran');
+});
+
+test('applyEdit P3: three parallel hunks on one file all land, and Undo Run restores the original', async () => {
+  const filePath = path.join(tempDir, 'cli.py');
+  const original = 'import os\n\ndef run():\n    pass\n\ndef shell():\n    pass\n';
+  fs.writeFileSync(filePath, original, 'utf-8');
+  runContext.startRun('run_parallel', tempDir);
+  const hunk = (id: string, oldText: string, newText: string): ReviewRequest => ({
+    id, runId: 'run_parallel', threadId: 'main', path: 'cli.py', kind: 'replace',
+    oldText, newText, startLine: 1, endLine: 1, reason: 'r', sources: [], index: 1, total: 3, baseVersion: 0,
+  });
+  const results = await Promise.all([
+    applyHunk(hunk('h1', 'import os\n', 'import json\nimport os\n'), tempDir),
+    applyHunk(hunk('h2', 'def run():\n    pass\n', 'def run():\n    return 1\n'), tempDir),
+    applyHunk(hunk('h3', 'def shell():\n    pass\n', 'def shell():\n    return 2\n'), tempDir),
+  ]);
+  for (const r of results) assert.match(r, /^APPLIED/);
+  assert.equal(fs.readFileSync(filePath, 'utf-8'), 'import json\nimport os\n\ndef run():\n    return 1\n\ndef shell():\n    return 2\n');
+
+  const undo = await undoStore.undoRun('run_parallel', tempDir);
+  assert.equal(undo.success, true, undo.message);
+  assert.equal(undo.revertedCount, 3);
+  assert.equal(fs.readFileSync(filePath, 'utf-8'), original);
+  runContext.endRun();
 });
