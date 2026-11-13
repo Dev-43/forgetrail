@@ -408,6 +408,52 @@ Entry format (copy this):
 - Rubric: A1, A2, A3, B2, B3 (evidence); C1 (video planning).
 - Call line: "All three tasks and cancel pass headless on the fixed code; Task B needs a model with more than 20 requests a day."
 
+> D-058 to D-063 come from the VS Code UI retest on 2026-11-13 (tester: Meghana Agnur, with the Claude Code agent). T1–T6 passed and confirmed R1, R2, E3, E4, E7, F1, F6 in the real editor; the bugs below were found there. Manual retest steps for whoever has the editor: `docs/RETEST.md`.
+
+### D-058 Fix P3: apply hunks for one file one at a time (TrueForge runs approved calls in parallel)
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Tasks: C-4, C-16 (fix)
+- Decision: `applyHunk` runs inside a per-file queue (`withFileLock`), takes the open document's text as the base (disk only when the file is not open), and checks `doc.save()`; if VS Code refuses the save, the same text is written to disk so editor, disk and undo snapshot agree. `undoLast` checks its save the same way.
+- Why: in the Task B UI run, three accepted `cli.py` hunks were executed by TrueForge in parallel; each read the old text and replaced the whole document, so the last write won. VS Code showed "Failed to save 'cli.py': The content of the file is newer", one accepted hunk vanished (the agent re-proposed it: "previous hunk was dropped when parallel edits raced"), and Undo Run then left two hunks behind because the snapshots no longer chained. Headless runs never showed it because the fs path has no await between read and write. Amends D-006 (still one WorkspaceEdit + save per hunk).
+- Alternatives rejected: asking TrueForge to run approvals sequentially (no such option in 0.184); applying all hunks of a batch in the run controller (TrueForge executes the MCP calls, not the client).
+- Rubric: A2 (10), B2 (10, undo shown on screen).
+- Call line: "Approved edits to the same file are queued, so parallel tool execution can never drop a hunk or break undo."
+
+### D-059 Fix R8: answer client-side tool calls; switch ask_user_question and generative UI off
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Tasks: C-3, C-16 (fix)
+- Decision: the run controller now handles `tool.response_required` together with `tool.approval_required` and resumes with ONE batch of `user.tool_approval` + `user.tool_response` (`sendTurnInputs`). `ask_user_question` is shown as a QuickPick ("ForgeTrail: the agent asks", the model's options plus "Type my own answer…"); headless runs and dismissed questions answer "The user did not answer…"; any other client tool gets an explicit error answer (`src/trueforge/clientTools.ts`). All four agents set `config.ask_user_questions.enabled = false` and `config.generative_ui.enabled = false` (verified stored on TrueForge). If TrueForge still refuses a batch, the error says how many accepted hunks were NOT applied.
+- Why: in T2 the model asked what the rejection "dpn" meant while proposing an edit; ForgeTrail ignored the question, TrueForge answered 422 "Send batch must resolve all pending tool calls", and the fallback policy silently restarted the run: the user's Accept was lost.
+- Alternatives rejected: only disabling the built-in (a provider or future TrueForge default could bring it back); only the QuickPick (inline edits should not stop for questions).
+- Rubric: A1 (10), B4 (10, approvals drive the loop correctly).
+- Call line: "Every pause is resolved in one batch, approvals and answers together, so a model question can no longer throw away an accepted edit."
+
+### D-060 Fix P1, P2: tool trail and Context Chosen card match what TrueForge streams (contract C8: optional toolCallId)
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Tasks: C-13, C-18 (fix)
+- Decision: contract change: `tool.started` / `tool.finished` carry an optional `toolCallId`. The mapper assembles streamed tool-call fragments by index and adds one row when the argument JSON is complete; `tool.response` (which has `toolCallId` but no tool name) closes the row by id; rows show the path or command; results count as failed on denial or non-zero exit; the panel marks rows still open at run end "— no result". CONTEXT lines are parsed only when complete; a line break is added at each message end (transcript too); paths may contain hyphens or backticks; token counts are the sum of the file's read_file results, shown only when known.
+- Why: UI test showed every call twice (`search_workspace ("")` + `unknown_tool ({…})`), all rows stuck on "running…", the Context card missing `src/flask/cli.py` (its CONTEXT line was glued to "…my plan."), reasons cut mid-stream ("documents", "lists the") and "~100t" placeholders. Stream shape confirmed with a probe on 2026-11-13: tool calls arrive only as `model.message.delta` fragments (id+name with empty arguments, then argument text); `model.message` carries no tool calls.
+- Rubric: B1 (15, context assembly visibly at work), B4 (10).
+- Call line: "The panel shows each tool call once with its result, and the context card lists every file with the model's full reason and real token counts."
+
+### D-061 Agent rule and run_command environment (C1, C2, C3)
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Tasks: C-14, C-15 (fix)
+- Decision: agent-mode rule 7 now says run_command is only for tests or the changed program, never for listing/reading/searching (use suggest_context, search_workspace, repo_outline, read_file), one plain command per call. The run_command tool description states the shell (`cmd.exe` on Windows: `&&`, never `;`; no head/sed/ls//dev/null). `buildCommandEnv` puts `.venv/Scripts` (or `bin`) first on the real `Path` key on Windows and sets `VIRTUAL_ENV`.
+- Why: Mistral explored with `ls`/`grep`/`sed` through run_command, one modal per command (headless scripts hid this: without VS Code the dialog defaults to Run), several failing in cmd.exe on `;`. After the rule change the Task B run had no exploration prompts and used search_workspace/read_file (budget 10,170 / 12,000). The venv was ignored because spreading `process.env` and adding `PATH` left Windows' original `Path` in force, so the agent tested against system Python and reported "7 pre-existing failures" that the venv does not have.
+- Rubric: B1 (15), A2 (10), C1 (video: no modal per grep).
+- Call line: "The agent explores with the budgeted retrieval tools and runs only tests, in the project's own Python."
+
+### D-062 Small UI fixes: U1, U2, B1 shortcuts
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Tasks: U-3, U-4 (fix)
+- Decision: "applied 0 hunk(s)" shows no Undo buttons. The reject "Why?" box is one at a time and is closed (through a CancellationToken) when the run ends, is cancelled, or the hunk is accepted; Escape still means "reject without feedback" per BUILD_ui U-2. New chords `Ctrl+K Ctrl+E` (Inline Edit, works whether or not Ctrl is held for the second key), `Ctrl+K Ctrl+Y` / `Ctrl+K Ctrl+N` (Accept / Reject); the Ctrl+Alt bindings stay.
+- Why: UI test: a "Why?" box stayed open after the run was DONE; Undo buttons offered with nothing applied; the tester could not trigger Inline Edit by keyboard (no conflicting binding found in their keybindings.json or extensions; Ctrl+Alt is AltGr on many Windows layouts).
+- Rubric: A1 (10), C1 (video).
+- Call line: "Every review action has a non-AltGr shortcut and the reject prompt never outlives its hunk."
+
+### D-063 Verification of D-058 to D-062
+- Date 2026-11-13 · Author Meghana Agnur with Claude Code · Task: C-25 (re-run)
+- Decision: `npm run compile` clean; `npm test` 73/73 (15 new: parallel same-file applies + Undo Run, lock ordering, streamed tool-call fragments, CONTEXT across messages and deltas, token sums, ask_user_question answers, Windows `Path` handling, shell note); `npm run check` 11/11; `npm run setup` all PASS and TrueForge stores `ask_user_questions` / `generative_ui` disabled on all four agents.
+- Not yet done: the manual editor retest in `docs/RETEST.md` (shortcuts, Task B panel with parallel hunks and Undo Run, a model question, reject box). Until that table is filled, P3/R8/P1/P2 are verified by unit tests and code reading only.
+- Rubric: evidence for A1, A2, B1, B2, B4.
+- Call line: "All fixes are unit-tested; the editor checks are scripted in docs/RETEST.md."
+
 ---
 
 ## Part 3 — Understanding notes (one per module; owner writes after it works)
@@ -470,6 +516,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-11 09:40 IST | Antigravity | Devesh | Tasks A-8, C-24, C-25: Multi-branch integration (UI co-authored, API PR #2, core/engine), full verification on main, and write-up assembly | `docs/writeup/*`, `DECISIONS.md` | None |
 | 2026-11-11 19:40 – 2026-11-12 00:28 IST | Claude Code | Meghana Agnur | End-to-end test of the submission (scripts + VS Code UI), then fix the bugs found (B0, R1–R6, E1–E7, F1–F6, X1–X2, S1–S13, D1–D3) | `src/trueforge/*`, `src/apply/*`, `src/fallback/*`, `src/mcp/pathGuard.ts`, `src/mcp/runContext.ts`, `src/mcp/tools/runCommand.ts`, `src/inline/inlineEdit.ts`, `src/ui/statusBar.ts`, `src/shared/*`, `src/extension.ts`, `package.json`, `agents/*.json`, `config/models.example.json`, `.env.example`, `scripts/*`, `test/*`, `README.md`, `docs/*` | None |
 | 2026-11-12 14:25 – 16:30 IST | Claude Code | Meghana Agnur | Continue the test pass on the fixed code (Task A/B/C, cancel), fix S14, log D-049 to D-057 | `scripts/verify.ts`, `DECISIONS.md` | None |
+| 2026-11-13 12:45 – 16:30 IST | Claude Code | Meghana Agnur | Guide the VS Code UI retest (T1–T6), then fix every bug it found (R8, P1–P3, C1–C3, U1, U2, shortcuts) and write a manual retest checklist | `src/trueforge/runController.ts`, `src/trueforge/clientTools.ts` (new), `src/trueforge/client.ts`, `src/trueforge/eventMapper.ts`, `src/shared/contracts.ts`, `src/apply/applyEdit.ts`, `src/apply/undoStore.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `src/ui/notifications.ts`, `src/review/ui/reviewController.ts`, `src/panel/webview/main.js`, `agents/*.json`, `package.json`, `README.md`, `test/*.test.ts`, `docs/RETEST.md`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 
