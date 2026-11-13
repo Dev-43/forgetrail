@@ -151,6 +151,6 @@ Minimum model requirement: tool calling, and a context window of at least 32k to
 
 1. **Free-tier quotas**: free tiers hit 429/503 during long Task B runs. Tool calls are paced at 4.5 s in `src/mcp/server.ts`; ForgeTrail backs off and fails over to the fallback model.
 2. **TrueForge Standalone 20s Header Timeout**: Pre-1.0 TrueForge standalone backend has an unconfigurable 20s header timeout. Deep-thinking models may time out if generation exceeds 20s.
-3. **Keybinding**: `Ctrl+Alt+E` acts as AltGr on some Windows keyboard layouts; use `Ctrl+K E`, the editor right-click menu or the Command Palette ("ForgeTrail: Inline Edit"). Cancel any run with "ForgeTrail: Cancel Run" or by clicking the status bar item.
+3. **Keybinding**: `Ctrl+Alt+…` acts as AltGr on some Windows keyboard layouts. Use the chords instead: Inline Edit `Ctrl+K Ctrl+E` (or `Ctrl+K E`), Accept hunk `Ctrl+K Ctrl+Y`, Reject hunk `Ctrl+K Ctrl+N`; or the editor right-click menu, the ✓/✗ buttons in the diff tab, and the Command Palette. Cancel any run with "ForgeTrail: Cancel Run" or by clicking the status bar item.
 4. **Single Active Run Concurrency**: The run controller enforces single-run isolation to prevent concurrent file corruption.
 5. **Regex Symbol Outlines**: Symbol definitions are extracted for Python, TypeScript, and JavaScript.
