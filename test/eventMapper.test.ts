@@ -47,12 +47,104 @@ test('eventMapper: maps tool.response from spike sample', () => {
   const rawSample = spikeSamples['tool.response'];
 
   const events = mapper.mapEvent(rawSample);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].type, 'tool.finished');
-  if (events[0].type === 'tool.finished') {
-    assert.equal(events[0].ok, true);
-    assert.match(events[0].resultSummary, /get_debug_flag/);
+  // The call's start was never seen in this stream, so its row is added before it is closed
+  assert.deepEqual(events.map((e) => e.type), ['tool.started', 'tool.finished']);
+  const finished = events[1];
+  if (finished.type === 'tool.finished') {
+    assert.equal(finished.ok, true);
+    assert.equal(finished.toolCallId, 'call_16388427314343380977');
+    assert.match(finished.resultSummary, /get_debug_flag/);
   }
+});
+
+// --- P1: tool trail, as TrueForge 0.184 really streams calls (recorded 2026-11-13) ---
+
+test('eventMapper P1: a call streamed in fragments gets ONE row with its arguments, closed by toolCallId', () => {
+  const mapper = new EventMapper('p1');
+  const first = mapper.mapEvent({
+    type: 'model.message.delta', threadId: 'main',
+    toolCalls: [{ toolInfo: { type: 'mcp', name: 'read_file' }, index: 0, id: '0e0caccad', type: 'function', function: { name: 'read_file', arguments: '' } }],
+  });
+  assert.equal(first.filter((e) => e.type === 'tool.started').length, 0, 'no row while arguments are empty');
+
+  const second = mapper.mapEvent({
+    type: 'model.message.delta', threadId: 'main',
+    toolCalls: [{ index: 0, function: { arguments: '{"path": "src/flask/helpers.py", "start_line": 28, "end_line": 34}' } }],
+  });
+  const started = second.filter((e) => e.type === 'tool.started');
+  assert.equal(started.length, 1);
+  if (started[0].type === 'tool.started') {
+    assert.equal(started[0].toolName, 'read_file');
+    assert.equal(started[0].toolCallId, '0e0caccad');
+    assert.equal(started[0].argsSummary, 'src/flask/helpers.py:28-34');
+  }
+
+  const done = mapper.mapEvent({
+    type: 'tool.response', threadId: 'main', toolCallId: '0e0caccad',
+    content: '[src/flask/helpers.py | lines 28-34 of 642 | ~60 tokens | budget left 11940]\ndef get_debug_flag() -> bool:',
+  });
+  assert.deepEqual(done.map((e) => e.type), ['tool.finished'], 'no second row for the same call');
+  if (done[0].type === 'tool.finished') {
+    assert.equal(done[0].toolName, 'read_file', 'name comes from the recorded call (tool.response has none)');
+    assert.equal(done[0].toolCallId, '0e0caccad');
+    assert.equal(done[0].ok, true);
+  }
+});
+
+test('eventMapper P1: run_command rows show the command; non-zero exit and denials count as failed', () => {
+  const mapper = new EventMapper('p1b');
+  const ev = mapper.mapEvent({
+    type: 'model.message.delta', threadId: 'main',
+    toolCalls: [{ index: 0, id: 'c1', function: { name: 'run_command', arguments: '{"command": "python -m pytest -q"}' } }],
+  });
+  const row = ev.find((e) => e.type === 'tool.started');
+  assert.ok(row && row.type === 'tool.started' && row.argsSummary === 'python -m pytest -q');
+
+  const failed = mapper.mapEvent({ type: 'tool.response', toolCallId: 'c1', content: 'EXIT 1\n2 failed' });
+  assert.ok(failed[0].type === 'tool.finished' && failed[0].ok === false);
+
+  mapper.mapEvent({ type: 'model.message.delta', toolCalls: [{ index: 1, id: 'c2', function: { name: 'propose_edit', arguments: '{"path":"a.py"}' } }] });
+  const denied = mapper.mapEvent({ type: 'tool.response', toolCallId: 'c2', content: '{"error":[{"type":"text","text":"User denied tool call"}]}' });
+  const last = denied[denied.length - 1];
+  assert.ok(last.type === 'tool.finished' && last.ok === false);
+});
+
+// --- P2: context card ---
+
+test('eventMapper P2: CONTEXT glued to the previous message, split across deltas, still parsed whole', () => {
+  const mapper = new EventMapper('p2');
+  const all: any[] = [];
+  // Message 1 ends without a newline; TrueForge then sends a tool call and message 2
+  all.push(...mapper.mapEvent({ type: 'model.message.delta', threadId: 'main', content: 'Let me check, then state my plan.' }));
+  all.push(...mapper.mapEvent({ type: 'model.message', threadId: 'main' }));
+  for (const piece of ['CONTEXT: src/flask/cli.py — defines the built-in com', 'mands (run, shell, routes)\nCONTEXT: docs/cli.rst — documents ', 'the built-in commands\n']) {
+    all.push(...mapper.mapEvent({ type: 'model.message.delta', threadId: 'main', content: piece }));
+  }
+  const items = mapper.getContextItems();
+  assert.deepEqual(items.map((i) => i.path), ['src/flask/cli.py', 'docs/cli.rst']);
+  assert.equal(items[0].reason, 'defines the built-in commands (run, shell, routes)', 'reason not cut mid-stream');
+  assert.equal(items[1].reason, 'documents the built-in commands');
+  assert.ok(all.some((e) => e.type === 'text.delta' && e.text === '\n'), 'transcript gets the missing line break');
+});
+
+test('eventMapper P2: last CONTEXT line without a trailing newline is parsed when the message ends', () => {
+  const mapper = new EventMapper('p2b');
+  mapper.mapEvent({ type: 'model.message.delta', content: 'CONTEXT: `tests/test-cli.py` - existing CLI tests' });
+  assert.equal(mapper.getContextItems().length, 0, 'not yet: the line may still grow');
+  mapper.mapEvent({ type: 'tool.approval_required', toolCalls: [] });
+  assert.deepEqual(mapper.getContextItems().map((i) => [i.path, i.reason]), [['tests/test-cli.py', 'existing CLI tests']]);
+});
+
+test('eventMapper P2: context card shows real read_file token counts, not a ~100 placeholder', () => {
+  const mapper = new EventMapper('p2c');
+  mapper.mapEvent({ type: 'model.message.delta', toolCalls: [{ index: 0, id: 'r1', function: { name: 'read_file', arguments: '{"path":"src/flask/cli.py","start_line":1,"end_line":80}' } }] });
+  mapper.mapEvent({ type: 'tool.response', toolCallId: 'r1', content: '[src/flask/cli.py | lines 1-80 of 1136 | ~700 tokens | budget left 11300]' });
+  mapper.mapEvent({ type: 'model.message.delta', toolCalls: [{ index: 1, id: 'r2', function: { name: 'read_file', arguments: '{"path":"src/flask/cli.py","start_line":560,"end_line":620}' } }] });
+  mapper.mapEvent({ type: 'tool.response', toolCallId: 'r2', content: '[src/flask/cli.py | lines 560-620 of 1136 | ~559 tokens | budget left 10741]' });
+  mapper.mapEvent({ type: 'model.message.delta', content: 'CONTEXT: src/flask/cli.py — built-in commands\nCONTEXT: docs/cli.rst — docs, not read yet\n' });
+  const items = mapper.getContextItems();
+  assert.equal(items.find((i) => i.path === 'src/flask/cli.py')?.tokens, 1259, 'sum of both reads');
+  assert.equal(items.find((i) => i.path === 'docs/cli.rst')?.tokens, 0, 'unknown, shown without a number');
 });
 
 test('eventMapper: tool.approval_required does not emit review.requested (the run controller does)', () => {
