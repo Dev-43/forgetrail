@@ -202,6 +202,13 @@ async function applyHunkUnlocked(
     return `ERROR APPLY_FAILED: ${err?.message}`;
   }
 
+  // Adjust inline selection region bounds if lines were added or removed
+  if (runContext.selectionRegion && runContext.selectionRegion.path === relPath) {
+    const beforeCount = currentText.split(/\r?\n/).length;
+    const afterCount = proposedText.split(/\r?\n/).length;
+    runContext.selectionRegion.endLine += (afterCount - beforeCount);
+  }
+
   // Calculate applied line range from where the old text matched (EOL-normalised), not by
   // searching for new_text, which can be absent after CRLF conversion or occur earlier.
   let startLine = 1;

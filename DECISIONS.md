@@ -454,6 +454,14 @@ Entry format (copy this):
 - Rubric: evidence for A1, A2, B1, B2, B4.
 - Call line: "All fixes are unit-tested; the editor checks are scripted in docs/RETEST.md."
 
+### D-064 Multi-hunk inline selection bound expansion
+- Date 2026-11-14 22:15 IST · Author Antigravity · Task: C-6 / inline edit
+- Decision: When a proposed hunk is applied inside an active inline selection, `runContext.selectionRegion.endLine` is dynamically adjusted in `src/apply/applyEdit.ts` by the net line delta (`afterCount - beforeCount`).
+- Why: Task A live UI testing on `src/flask/helpers.py`. The user selected lines 28–33 (`get_debug_flag`). Hunk 1 (docstring) was accepted, inserting 2 lines. When Hunk 2 arrived for the return statement at line 35, `runController.ts` pre-validation flagged `35 > 33` and auto-denied it with `D_OUTSIDE_REGION` (`REJECTED_AUTO: edit is outside the selected region (lines 28-33)`). Expanding `selectionRegion.endLine` by the line delta allows subsequent hunks in the same function to pass validation.
+- Alternatives rejected: Requiring user to select arbitrary trailing blank lines (fragile UX); relaxing the region guard entirely (breaks rubric A1 inline bounding).
+- Rubric: A1 (10), B2 (10).
+- Call line: "When an accepted hunk inserts lines, the selection boundary expands with it so later hunks in the same function still pass validation."
+
 ---
 
 ## Part 3 — Understanding notes (one per module; owner writes after it works)
@@ -517,6 +525,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-11 19:40 – 2026-11-12 00:28 IST | Claude Code | Meghana Agnur | End-to-end test of the submission (scripts + VS Code UI), then fix the bugs found (B0, R1–R6, E1–E7, F1–F6, X1–X2, S1–S13, D1–D3) | `src/trueforge/*`, `src/apply/*`, `src/fallback/*`, `src/mcp/pathGuard.ts`, `src/mcp/runContext.ts`, `src/mcp/tools/runCommand.ts`, `src/inline/inlineEdit.ts`, `src/ui/statusBar.ts`, `src/shared/*`, `src/extension.ts`, `package.json`, `agents/*.json`, `config/models.example.json`, `.env.example`, `scripts/*`, `test/*`, `README.md`, `docs/*` | None |
 | 2026-11-12 14:25 – 16:30 IST | Claude Code | Meghana Agnur | Continue the test pass on the fixed code (Task A/B/C, cancel), fix S14, log D-049 to D-057 | `scripts/verify.ts`, `DECISIONS.md` | None |
 | 2026-11-13 12:45 – 16:30 IST | Claude Code | Meghana Agnur | Guide the VS Code UI retest (T1–T6), then fix every bug it found (R8, P1–P3, C1–C3, U1, U2, shortcuts) and write a manual retest checklist | `src/trueforge/runController.ts`, `src/trueforge/clientTools.ts` (new), `src/trueforge/client.ts`, `src/trueforge/eventMapper.ts`, `src/shared/contracts.ts`, `src/apply/applyEdit.ts`, `src/apply/undoStore.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `src/ui/notifications.ts`, `src/review/ui/reviewController.ts`, `src/panel/webview/main.js`, `agents/*.json`, `package.json`, `README.md`, `test/*.test.ts`, `docs/RETEST.md`, `DECISIONS.md` | None |
+| 2026-11-14 21:15 – 22:20 IST | Antigravity | User | UI test audit: Option B Groq key setup, root cause analysis & fix of multi-hunk inline selection expansion (D-064), and create live UI test record | `config/models.json`, `src/apply/applyEdit.ts`, `docs/UI_TESTING_AUDIT_CHANGES.md`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 

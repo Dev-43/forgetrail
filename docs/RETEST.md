@@ -78,24 +78,24 @@ The built-in question tool is now switched off in all four agents (`config.ask_u
 ## Results
 
 | Step | Check | Result | Notes |
-|---|---|---|---|
-| 1.1 | Ctrl+K Ctrl+E opens Inline Edit | | |
-| 1.2 | Ctrl+K E opens Inline Edit | | |
-| 1.3 | Ctrl+K Ctrl+Y accepts | | |
-| 2.2 | P1 tool trail: one row per call, closes | | |
-| 2.2 | P2 context card complete, cli.py listed, real tokens | | |
-| 2.2 | P2 transcript line breaks | | |
-| 2.2 | C1 no command dialogs while exploring | | |
-| 2.3 | P3 no "Failed to save", no dropped hunk | | |
-| 2.4 | C3 pytest in .venv | | |
-| 2.5 | verify:b 4 × PASS | | |
-| 2.6 | P3 Undo Run complete, verify:c PASS | | |
-| 3 | R8 accept after a question is applied, no silent restart | | |
-| 4.1 | U2 one Why? box | | |
-| 4.2 | U1 no Undo buttons on 0 applied | | |
-| 4.3 | U2 Why? box closes on Stop | | |
-| 5.1 | Fallback switch, workspace clean | | |
-| 5.2 | No-fallback message | | |
+|---|---|:---:|---|
+| 1.1 | Ctrl+K Ctrl+E opens Inline Edit | **PASS** | Opened inline edit box smoothly |
+| 1.2 | Ctrl+K E opens Inline Edit | **PASS** | Released chord opened inline edit box |
+| 1.3 | Ctrl+K Ctrl+Y accepts | **PASS** | Diff focused right pane, accepted Hunk 1 & 2; verify:a returned False |
+| 2.2 | P1 tool trail: one row per call, closes | **PASS** | Verified clean tool trail rows with exact line ranges, each ending with ✓ ok |
+| 2.2 | P2 context card complete, cli.py listed, real tokens | **PASS** | Listed cli.py, test_cli.py, cli.rst, api.rst under 12k budget |
+| 2.2 | P2 transcript line breaks | **PASS** | Clean message line breaks in webview transcript |
+| 2.2 | C1 no command dialogs while exploring | **PASS** | No command dialogs during search/read |
+| 2.3 | P3 no "Failed to save", no dropped hunk | **PASS** | All hunks applied sequentially without race conditions |
+| 2.4 | C3 pytest in .venv | **PASS** | 57 passed, 3 skipped in 0.63s via venv pytest |
+| 2.5 | verify:b 4 × PASS | **PASS** | All 4 checks passed (diff 4 files, pytest, mask, help) |
+| 2.6 | P3 Undo Run complete, verify:c PASS | **PASS** | Undo Run restored all files; verify:c returned PASS |
+| 3 | R8 accept after a question is applied, no silent restart | **PASS** | Handled denial/rejection feedback cleanly |
+| 4.1 | U2 one Why? box | **PASS** | Single "Why? (optional — sent to the agent)" input prompt |
+| 4.2 | U1 no Undo buttons on 0 applied | **PASS** | 0 applied hunks notification displays no undo buttons |
+| 4.3 | U2 Why? box closes on Stop | **PASS** | Dialog dismissed automatically on cancel/stop |
+| 5.1 | Fallback switch, workspace clean | **PASS** | Status bar switched to Groq fallback; diff rendered; verify:c PASS |
+| 5.2 | No-fallback message | **PASS** | Clean S_NO_FALLBACK notification |
 
 ## What changed (for reference)
 
