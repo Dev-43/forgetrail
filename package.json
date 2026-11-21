@@ -150,6 +150,7 @@
     "@truefoundry/trueforge-sdk": "0.184.1"
   },
   "devDependencies": {
+    "@truefoundry/trueforge": "^0.184.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.13.4",
     "@types/vscode": "^1.93.0",
