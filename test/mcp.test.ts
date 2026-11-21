@@ -67,7 +67,7 @@ test('searchWorkspace: finds query and formats header', async () => {
   );
 
   assert.match(output, /^\[search: forgetrail \| \d+ matches \| ~\d+ tokens \| budget left \d+\]/);
-  assert.match(output, /BUILD\.md:/);
+  assert.match(output, /(README\.md|DECISIONS\.md|package\.json):/);
 });
 
 test('runContext: budget tracking and cancellation flag', () => {

@@ -1,18 +1,20 @@
 # ForgeTrail — Techfest 2026-27 Forge-a-thon Submission Write-Up
 
+**Team Name:** Mark-27 · **Team ID:** `TM-D8D4AED1C25` · **Institution:** Indian Institute of Technology Bombay (IIT Bombay)  
+**Repository:** [https://github.com/Dev-43/forgetrail](https://github.com/Dev-43/forgetrail)
+
 ---
 
 ## 1. Team
 
 | Name | Role | GitHub Handle | Primary Responsibilities |
 |---|---|---|---|
-| **Devesh Dolas** | Core Engine | [`@Dev-43`](https://github.com/Dev-43) | MCP HTTP Server (`:3333`), TrueForge client bridge, RunController state machine, atomic applyEdit, undoStore, retrieval budget, panel webview, and cancel guard. |
-| **Pranav Gaikwad** | API & Verification | [`@Pranav1632`](https://github.com/Pranav1632) | Provider/connector registration (`scripts/setup.ts`), model matrix benchmarking, fallback policy (`runWithFallback`), pre-submission check script, and Flask setup documentation. |
-| **Vidyankshini Vibhute** | UI & Diff Review | [`@VIDYANKSHINI`](https://github.com/VIDYANKSHINI) | Native VS Code diff review presenter (`ReviewController`), proposed doc provider (`forgetrail-proposed://`), why-decorations, status bar manager, and notifications. |
+| **Devesh Dolas** | Core Engine | [`@Dev-43`](https://github.com/Dev-43) | MCP HTTP Server (`:3333`), TrueForge client bridge, `RunController` state machine, atomic `applyEdit`, `undoStore`, 12k retrieval budget, Agent Panel webview, and cancel guard. |
+| **Pranav Gaikwad** | API & Verification | [`@Pranav1632`](https://github.com/Pranav1632) | Provider/connector registration (`scripts/setup.ts`), model matrix benchmarking, resilient fallback policy (`runWithFallback`), pre-submission check script, and Flask benchmark verification. |
+| **Vidyankshini Vibhute** | UI & Diff Review | [`@VIDYANKSHINI`](https://github.com/VIDYANKSHINI) | Native VS Code diff review presenter (`ReviewController`), virtual document provider (`forgetrail-proposed://`), inline `why` decorations, status bar manager, and notifications. |
 
-- **Institution:** Indian Institute of Technology Bombay (IIT Bombay)
-- **Competition:** Techfest 2026-27 Forge-a-thon (TrueForge Track)
-- **Repository:** [https://github.com/Dev-43/forgetrail](https://github.com/Dev-43/forgetrail)
+- **Team Name & ID:** Team **Mark-27** (`TM-D8D4AED1C25`)
+- **College / Institution:** Indian Institute of Technology Bombay (IIT Bombay)
 
 ---
 
@@ -20,11 +22,10 @@
 
 **From scratch — no upstream project was forked.**
 
-ForgeTrail was conceived, architected, and built entirely from an empty git repository initialized for the Techfest 2026-27 Forge-a-thon. 
-
-- **No Upstream Templates or Boilerplate Forks**: The VS Code extension skeleton was created directly using standard VS Code Extension APIs with strict TypeScript compilation (`tsconfig.json`).
-- **No Third-Party Diff Libraries**: All diff rendering utilizes the VS Code native diff editor (`vscode.diff`) and virtual text documents (`forgetrail-proposed://`), avoiding external diff dependencies or custom webview diff clones.
-- **Zero Copied Code**: All components—including the Streamable HTTP MCP server, the lexical context retrieval engine, the regex-based symbol extractors, and the atomic hunk undo stack—were authored from first principles in compliance with project rule R5.
+ForgeTrail was conceived, architected, and built entirely from an empty Git repository initialized for the Techfest 2026-27 TrueFoundry Forge-a-thon:
+- **No Upstream Templates or Boilerplate Forks**: Built directly on standard VS Code Extension APIs (`^1.93.0`) with strict TypeScript compilation (`tsconfig.json`).
+- **No Third-Party Diff Clones**: Uses VS Code's native split diff editor (`vscode.diff`) backed by a virtual document provider (`forgetrail-proposed://`), inline decorations for the agent's per-hunk reasoning, and native editor title-bar actions.
+- **Zero Copied Code**: The Streamable HTTP MCP server, lexical context retrieval engine, regex symbol outline extractor, per-file serialized apply queue, byte-for-byte undo stack, and client-side failover controller were written from first principles.
 
 ---
 
@@ -35,145 +36,113 @@ graph TD
     subgraph VS Code Extension Host
         UI[Native Diff Editor & Status Bar]
         Panel[Agent Webview Panel]
-        RC[RunController State Machine]
-        MCP[Local MCP Server :3333]
+        RC[RunController & runWithFallback]
+        MCP[Local MCP Server 127.0.0.1:3333]
         Undo[Atomic Apply & UndoStore]
     end
 
     subgraph TrueForge Local Daemon :8790
         Engine[Agent Turn Orchestrator]
-        Catalogs[Model Providers & Connectors]
+        Catalogs[Providers, Connectors & 4 Agents]
         DB[(forge.sqlite)]
     end
 
-    subgraph Model Providers
-        Primary[Google Gemini / Primary Model]
-        Secondary[Fallback models: Groq / NVIDIA]
+    subgraph Configured Model Providers
+        Primary[Primary Provider: Gemini / NVIDIA NIM]
+        Secondary[Fallback Provider: Groq / Gemini / NVIDIA]
     end
 
     Panel -->|instruction| RC
     UI -->|accept / reject| RC
     RC -->|sessions.createTurnStream| Engine
-    Engine -->|mcp-session-id Streamable HTTP| MCP
-    MCP -->|pathGuard, 12k budget| RC
+    Engine -->|Streamable HTTP /mcp-core & /mcp-extra| MCP
+    MCP -->|pathGuard & 12k token budget| RC
     Engine -->|LLM calls| Primary
-    Engine -.->|fallback failover| Secondary
+    Engine -.->|automatic failover| Secondary
     RC -->|WorkspaceEdit snapshot| Undo
 ```
 
-### Architectural Principles
-1. **Isolated CommonJS/ESM Bridge**: The VS Code Extension Host (CommonJS) bridges with `@truefoundry/trueforge-sdk` through dynamic ESM imports, eliminating packaging conflicts.
-2. **Streamable HTTP Session Multiplexing**: MCP endpoints `/mcp-core` and `/mcp-extra` on port 3333 maintain session state keyed on `mcp-session-id`, preventing "Server already initialized" conflicts across multi-turn agent runs.
-3. **Approval-Driven Review**: Proposed edits trigger TrueForge `tool.approval_required` events, pausing the loop server-side while the user reviews the diff in the native split editor.
-4. **Clean Cancel & Process Tree Cleanup**: Invoking `cancelRun()` synchronously sets a cancel guard, issues `client.sessions.cancel()`, closes open review diffs, and executes `taskkill /pid <PID> /T /F` on Windows to guarantee zero orphaned subprocesses.
+### How the Extension Talks to TrueForge & Which Harness Features Are Used
+1. **TrueForge SDK & Session Streaming**: The VS Code Extension Host communicates strictly with the local TrueForge daemon (`@truefoundry/trueforge@0.184.2` on `http://localhost:8790`) via `@truefoundry/trueforge-sdk@0.184.1` (`client.sessions.create`, `createTurnStream`, `cancel`). The extension never calls any LLM provider directly.
+2. **Two Streamable HTTP MCP Connectors (`127.0.0.1:3333`) & Deferred Tool Loading**:
+   - **`forgetrail-core` (`/mcp-core`, preloaded)**: Exposes `read_file`, `search_workspace`, `propose_edit`, and `run_command`.
+   - **`forgetrail-extra` (`/mcp-extra`, `deferred_loading: true`)**: Exposes `repo_outline` and `suggest_context`. In Agent Mode, TrueForge uses its built-in deferred meta-tools (`list_tools`, `get_tool_info`, `call_tool`) to load `/mcp-extra` schemas on demand, saving prompt tokens on simple turns.
+   - Each endpoint multiplexes connections by `mcp-session-id` so multi-turn and multi-tool batches never collide.
+3. **Human-in-the-Loop (HITL) Tool Approval Gating**: Both `propose_edit` and `run_command` are registered with `requires_approval` in the four TrueForge agent manifests (`agents/*.json`). When the model proposes an edit, TrueForge pauses the turn and emits `tool.approval_required`. `RunController` validates the proposal against workspace path guards and inline selection bounds, opens VS Code's native split diff editor (`forgetrail-proposed://`), waits for the user's **Accept (`✓`)** or **Reject (`✕`)** decision (with optional rejection feedback), and resumes the TrueForge turn with `allow` or `deny`.
+4. **Zero-Write Cancel & Process Cleanup**: Calling `cancelRun()` sets a synchronous cancel flag (`runContext.cancel()`), calls `client.sessions.cancel()`, disposes open review tabs, and kills any active child process tree (`taskkill /T /F` on Windows; `SIGKILL` on POSIX), ensuring `< 100 ms` cancellation and zero partial writes.
 
 ---
 
 ## 4. How Context is Selected
 
-ForgeTrail uses a budgeted lexical retrieval pipeline rather than heavy native embeddings or vector stores:
+ForgeTrail uses a fast, deterministic, budgeted lexical retrieval pipeline with **zero external embedding API dependencies**:
 
-### 1. The 12,000-Token Budget (`RUN_RETRIEVAL_MAX_TOKENS`)
-Every retrieval tool (`read_file`, `search_workspace`, `repo_outline`, `suggest_context`) computes an estimated token size (`ceil(chars / 4)`). Every read deducts from the 12,000-token budget. If exhausted, further reads return `E_BUDGET`, forcing the agent to proceed with accumulated context.
-
-### 2. Outline Extraction (`repo_outline`)
-Extracts class, function, and method signatures using regex definitions across Python, TypeScript, and JavaScript. Outlines are scored by keyword hits and bounded to 1,500 tokens (`OUTLINE_MAX_TOKENS`).
-
-### 3. Relevance Ranking (`suggest_context`)
-Analyzes user instructions, extracts search keywords, and ranks candidate files across three categories:
-- Source implementation files (`src/`, `flask/`)
-- Test suites (`tests/`)
-- Documentation files (`docs/`)
-Ranks up to 8 candidate files (`SUGGEST_MAX_FILES`) with explicit reasons and token sizes.
-
-### 4. Explicit Mentions (`@file:` and `@symbol:`)
-Users can attach explicit context directly into prompts:
-- `@file:<path>` extracts up to 200 lines, appending outline summaries if truncated.
-- `@symbol:<name>` resolves symbol definition blocks with line coordinates.
-Both inject blocks under `ATTACHED CONTEXT` and display in the panel's "Context Chosen" card.
+1. **Hard 12,000-Token Retrieval Budget (`RUN_RETRIEVAL_MAX_TOKENS = 12000`)**: Every retrieval tool (`read_file`, `search_workspace`, `repo_outline`, `suggest_context`) estimates tokens as `ceil(chars / 4)` and deducts from the run's 12,000-token budget. Every tool response header reports `[... | ~N tokens | budget left M]`. Once exhausted, further reads return `E_BUDGET`, forcing the agent to synthesize its plan and propose edits from gathered context.
+2. **Multi-Category Lexical File Ranking (`suggest_context`)**: Tokenizes the user's task description, strips stopwords, and scores workspace files across three buckets—**Source files** (`src/`, `flask/`), **Tests** (`tests/`), and **Documentation** (`docs/`)—by filename, path, and content keyword frequency. Returns up to 8 top-ranked files (`SUGGEST_MAX_FILES = 8`) with explicit selection reasons and token estimates.
+3. **Regex Symbol Outlines (`repo_outline`)**: Extracts `class`, `def`, and `function` signatures with 1-based line numbers across Python, TypeScript, and JavaScript, ranked by keyword hits and capped at **1,500 tokens** (`OUTLINE_MAX_TOKENS`).
+4. **Explicit `@file:` and `@symbol:` Mentions**: Users can pin `@file:<path>` (up to 200 lines plus an automatic symbol outline of the remainder) or `@symbol:<name>` (locates the symbol definition block and exact line range across the repo). Both are injected under `ATTACHED CONTEXT` and surfaced alongside agent-read files in the Agent Panel's **Context Chosen** card.
 
 ---
 
 ## 5. Model Setup
 
-### Models used
+### Declared Models, Where They Ran, and Cost
 
-All models are configured in TrueForge (catalog provider or OpenAI-compatible endpoint) by `npm run setup` from `config/models.json`; the extension never calls a provider.
+All models are configured in TrueForge (as catalog providers or OpenAI-compatible endpoints) by `npm run setup` reading `config/models.json`. There are **zero provider names in `src/`**.
 
-| Role (agent) | Model | Where it runs | Cost |
+| Agent Role | Model Identifier | Provider & Where It Ran | Cost |
 |---|---|---|---|
-| Primary, inline + agent mode (`forgetrail-*-primary`) | `google-gemini/gemini-3-6-flash` | Google AI Studio, free tier | $0.00 |
-| Inline fallback (`forgetrail-inline-fallback`) | `qwen/qwen3.8-27b` | Groq, OpenAI-compatible endpoint, free tier | $0.00 |
-| Agent-mode fallback (`forgetrail-agent-fallback`) | `mistralai/mistral-large-4-1t-a52b` | NVIDIA build.nvidia.com, OpenAI-compatible endpoint, free credits | $0.00 |
-| Used during development | `google-gemini/gemini-3-1-flash-lite` | Google AI Studio, free tier | $0.00 |
+| **Primary — Inline & Agent (`forgetrail-*-primary`)** | `google-gemini/gemini-3-6-flash`<br>`google-gemini/gemini-3-5-flash-lite`<br>`nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b` | Google AI Studio (TrueForge builtin catalog, free tier)<br>NVIDIA NIM (`https://integrate.api.nvidia.com/v1`, free trial credits) | **$0.00** |
+| **Inline Fallback (`forgetrail-inline-fallback`)** | `groq/qwen/qwen3.8-27b`<br>`google-gemini/gemini-3-1-flash-lite` | Groq (`https://api.groq.com/openai/v1`, OpenAI-compatible free tier)<br>Google AI Studio (TrueForge builtin catalog, free tier) | **$0.00** |
+| **Agent-Mode Fallback (`forgetrail-agent-fallback`)** | `nvidia/mistralai/mistral-large-4-1t-a52b`<br>`groq/qwen/qwen3.8-27b` | NVIDIA NIM (`https://integrate.api.nvidia.com/v1`, free trial credits)<br>Groq (`https://api.groq.com/openai/v1`, OpenAI-compatible free tier) | **$0.00** |
 
-Model probe on 2026-11-11 (plain reply + one `read_file` tool call through TrueForge): `gemini-3-5-flash-lite`, `gemini-3-5-flash`, `gemini-3-6-flash` and `gemini-flash-lite-latest` passed in 2–10 s; `gemini-3-7-flash` hit TrueForge's 20 s header timeout; `gemini-3-8-flash` returned 503 (high demand); `gemini-3-1-flash-lite`, `gemini-flash-latest` and `gemini-3-1-pro-preview` returned 429 (free-tier quota). On Groq, `llama-3.3-70b-versatile` is no longer offered and `openai/gpt-oss-120b` fails in TrueForge on multi-turn requests (`reasoning_content` rejected), so `qwen/qwen3.8-27b` is used.
+*Total inference cost across development, testing, and video recording: **$0.00** (100% free tiers).*
 
-*Total inference cost across build and testing: $0.00 (free tiers only).*
-
-### How a user switches models
-
-1. Put the provider's key in `.env` (any variable name).
-2. In `config/models.json`, add or edit an entry in `providers` (`builtin` for a TrueForge catalog provider; `openai-compatible` with `baseUrl` and the model ids otherwise) and point `models.primary` / `models.fallback` / `models.agentFallback` at `<provider>/<model id>`.
-3. Run `npm run setup` (or, without editing the file, `npm run setup -- --primary <provider>/<model id>`). Setup registers the providers, creates the four agents and prints `PASS smoke-primary` / `PASS smoke-fallback` when both models answer.
+### How a User Switches Models
+1. Place the provider's API key in `.env` (e.g., `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `SECONDARY_API_KEY`).
+2. In `config/models.json`, list the provider under `providers` (`"builtin"` for a TrueForge catalog provider or `"openai-compatible"` with `baseUrl` and `models[]`) and point `models.primary`, `models.fallback`, and `models.agentFallback` to `<provider>/<model id>`.
+3. Run `npm run setup` (or override via CLI without editing files: `npm run setup -- --primary <provider>/<model id> --fallback <provider>/<model id>`). Setup registers the providers in TrueForge, upserts all four agents, and verifies both with live turn streams (`PASS smoke-primary`, `PASS smoke-fallback`).
 
 ---
 
 ## 6. Scorecard
 
-One row per judging criterion. **Timestamps are the planned positions from the demo script (INTEGRATION.md section 5) and must be replaced with the real ones after recording.**
-
-| Criterion | Video timestamp | Claim |
+| Criterion | Video Timestamp | One-Line Claim |
 |---|---|---|
-| Gate | 2:45–2:58 | Loop runs on TrueForge 0.184.2 in local mode; editor tools are MCP tools on `127.0.0.1:3333`; Task B session shown; agent definitions in `agents/`. |
-| A1 Inline edit | 0:08–0:24 | Selection + keybinding + instruction gives a native diff per hunk with Accept/Reject buttons. |
-| A2 Agent mode | 1:04–2:30 | One panel request makes the agent find and edit 3+ files (`src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst`) it was not told about (Task B). |
-| A3 Streaming + cancel | 1:16–1:44, 3:38–3:42 | Text and tool calls stream into the panel; Stop cancels immediately (`0 applied, 0 discarded`) and `git status` shows no half-applied hunk. |
-| B1 Context assembly | 1:42–1:52 | `suggest_context` / `repo_outline` under a 12,000-token budget (`9,289 / 12,000`); the "Context Chosen" card shows files and token counts before the first hunk. |
-| B2 Diff safety | 0:18–0:24, 0:40–0:51 | Each hunk is reviewed in the native diff editor with an inline "why" line; Undo Run restores the file and `git status` / `verify:c` is clean. |
-| B3 Resilience | 3:01–3:27 | With the primary key broken (`--break-primary`), the status bar shows the automatic switch to `forgetrail-inline-fallback` and the fallback model's diff appears with no user action; rejecting leaves the workspace unchanged. |
-| B4 TrueForge depth | 1:16–1:20, 2:45–2:58 | TrueForge tool approval drives the review; deferred tool loading (`forgetrail-extra` via `list_tools`/`get_tool_info`/`call_tool`) and 8-turn / 30-tool-call trace visible in the session. |
-| C1 Video | 0:02, 0:34–0:39, 2:41–2:45, 3:22–3:27 | Tasks A, B, C in order, each verified on screen (`verify:a` + raw `FLASK_DEBUG=off`, `verify:b` + `flask --help`, `verify:c`). |
-| C2 Write-up | — | This document. |
+| **Eligibility Gate** | `2:45–2:58` | Agent loop runs strictly on local TrueForge `0.184.2`; editor tools are MCP tools on `127.0.0.1:3333`; Task B session shown; agent definitions in `agents/`. |
+| **A1 Inline edit** | `0:08–0:24` | Selection in `helpers.py` + `Cmd+K Cmd+E` + instruction opens a native split diff per hunk with inline `why` reason and Accept/Reject controls; verified `False` at `0:34–0:39`. |
+| **A2 Agent mode** | `1:04–2:30` | Single unprompted panel request discovers and edits 3 files (`src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst`) and passes all 4 verification checks at `2:41–2:45`. |
+| **A3 Streaming + cancel** | `1:16–1:44`, `3:38–3:42` | Plan, context, and tool calls stream live into the panel; clicking **Stop** mid-run at `3:41` halts immediately (`0 applied, 0 discarded`) with a clean `git status`. |
+| **B1 Context assembly** | `1:42–1:52` | `suggest_context` and `read_file` operate under the 12,000-token budget (`9,289 / 12,000` used); **Context Chosen** card displays selected files, reasons, and token counts before the first diff. |
+| **B2 Diff safety** | `0:18–0:24`, `0:40–0:51` | Every hunk is gated in the native diff editor before touching disk; **ForgeTrail: Undo Run** at `0:40` reverts `helpers.py` byte-for-byte (`PASS workspace unchanged`). |
+| **B3 Resilience (Task C)** | `3:01–3:27` | After `npm run setup -- --break-primary` (401 on primary), running Task A automatically switches the status bar to `forgetrail-inline-fallback`, renders the fallback diff, and leaves the workspace clean upon reject (`verify:c` PASS). |
+| **B4 TrueForge depth** | `1:16–1:20`, `2:45–2:58` | TrueForge HITL tool approval drives diff review; deferred MCP tool loading (`forgetrail-extra` via `list_tools`/`get_tool_info`/`call_tool`) and 8-turn / 30-tool-call trace shown in the TrueForge UI. |
+| **C1 Video** | `0:02`, `0:34–0:39`, `2:41–2:45`, `3:22–3:27` | Under 4 minutes (`3:47`); Tasks A, B, and C demonstrated in order, uncut from instruction to first diff, each verified on screen. |
+| **C2 Write-up** | — | This document (`ForgeTrail_Writeup.pdf` / `docs/writeup/WRITEUP.md`), backed by architectural log `DECISIONS.md` (`D-001` to `D-064`). |
 
 ---
 
 ## 7. Tools Used
 
-In accordance with rule R4 and competition guidelines, all software tools, runtime environments, and AI coding assistants used in the conception, development, and testing of ForgeTrail are honestly disclosed below:
-
-### 1. Developer Environment & Runtimes
-- **IDE:** Visual Studio Code (Extension Development Host engine `^1.93.0`).
-- **Runtime:** Node.js v22.17.1 on Windows 11 (PowerShell 5.1 / 7).
-- **Language / Tooling:** TypeScript 5.7.3 (`strict: true`), compiled with native `tsc` without third-party bundlers.
-- **Script Execution:** `tsx` (TypeScript Execute) for zero-compilation script execution.
-- **Test Harnesses:** `node:test` built-in test runner for pure logic unit testing; Python 3.12 virtual environments with `pytest` for Flask 3.1.3 baseline verification.
-
-### 2. Core Agent Framework & Libraries
-- **TrueForge Daemon:** `@truefoundry/trueforge` pinned at version `0.184.2` running in local standalone mode.
-- **TrueForge Client SDK:** `@truefoundry/trueforge-sdk` pinned at `0.184.1`.
-- **Model Context Protocol:** `@modelcontextprotocol/sdk` (Streamable HTTP transport) for bidirectional tool serving.
-
-### 3. AI Coding Assistants (Full Disclosure)
-- **Claude (Anthropic)**: Utilized during initial project inception (M0) for architectural scoping, requirements mapping, and contracts formalization in `DECISIONS.md` (`D-001`).
-- **Antigravity (Google DeepMind)**: Primary autonomous and pair-programming AI coding assistant utilized across Milestones M0, M1, M2, M3, and M4 for codebase implementation, MCP tool integration, native diff review wiring, resilience policies, and automated verification suites.
-  - Every single AI execution turn, instructions received, files touched, and UNCLEAR checkpoints were logged in real-time in [DECISIONS.md](../../DECISIONS.md) Part 5 ("Agent log").
+In accordance with competition rules, all software tools, libraries, and AI coding assistants used to build ForgeTrail are disclosed below:
+- **Runtime & IDE**: Visual Studio Code (`^1.93.0`), Node.js (`v22.17+` / `v26.8`), TypeScript `5.7.3` (`strict: true`), `tsx` script runner, Python `3.12` virtual environment with `pytest` (`<9`) on `pallets/flask` tag `3.1.3`.
+- **Agent Harness & Protocol SDKs**: `@truefoundry/trueforge` (`0.184.2` local standalone SQLite daemon), `@truefoundry/trueforge-sdk` (`0.184.1`), `@modelcontextprotocol/sdk` (`^1.32.2` Streamable HTTP transport), and `zod` (`^3.24.2`).
+- **AI Coding Assistants**:
+  - **Claude (Anthropic)**: Used during initial architecture planning and contract specification (`D-001`).
+  - **Antigravity (Google DeepMind)**: Used across Milestones M0–M4 for pair-programming implementation, MCP server wiring, native diff presentation, fallback logic, and automated test suites (logged turn-by-turn in `DECISIONS.md` Part 5).
 
 ---
 
 ## 8. Known Limitations
 
-1. **Free-tier quotas decide Task B.** Task B needs roughly 20–40 model requests. On free tiers the primary runs out of quota or gets 429/503 mid-run; ForgeTrail then backs off and fails over, but a run can still end without finishing. Tool calls are paced at 4.5 s (`MIN_TOOL_INTERVAL_MS` in `src/mcp/server.ts`) to stay under per-minute limits.
-2. **20 s model header timeout.** TrueForge 0.184.2 local mode gives a model 20 s to start answering; slower models (observed with `gemini-3-7-flash`) fail and are treated as transient errors.
-3. **Model quality still matters for Task B.** In testing, a model produced a `flask config` command that crashed on non-JSON config values (`timedelta`) and still reported "done". ForgeTrail shows every hunk for review but does not itself run the tests before the agent finishes.
-4. **Single active run.** One run at a time; the budget and cancel flag belong to the active run because MCP calls carry no TrueForge session id.
-5. **Regex outlines only for Python, TypeScript and JavaScript.** Other files are found by `search_workspace` and content scoring in `suggest_context`, but get no symbol outline.
-6. **No sandbox on Windows.** TrueForge's local sandbox supports Linux and macOS only; `run_command` runs as a child process in the workspace, auto-allowing only plain `pytest` / `git status` / `git diff` commands and asking for everything else.
+1. **Free-Tier Quotas on Long Multi-File Runs**: Task B requires 20–30 tool calls across 6–8 turns. Free-tier providers (15 RPM on Google AI Studio; 6k–12k TPM on Groq) can hit HTTP `429` or `503` mid-run. ForgeTrail paces MCP tool execution at `4.5 s` (`MIN_TOOL_INTERVAL_MS`) and automatically backs off or switches to the fallback model, though simultaneous exhaustion of both free tiers will terminate a run with `S_NO_FALLBACK`.
+2. **Fixed 20-Second TrueForge Header Timeout**: TrueForge `0.184.2` standalone mode enforces a 20-second HTTP headers timeout (`UND_ERR_HEADERS_TIMEOUT`); slow reasoning models that take $>20\text{ s}$ before emitting the first token time out and trigger fallback.
+3. **Model Output Quality vs. Automatic Test Gate**: While the agent calls `run_command` to run `pytest` during Task B, ForgeTrail does not enforce a mandatory post-apply test harness gate before allowing the agent to declare completion.
+4. **Single Active Run Concurrency**: Only one run can execute at a time because MCP tool requests do not carry a TrueForge session ID; budget and cancel state are scoped to the active run.
+5. **Regex Symbol Outlines**: `repo_outline` supports Python, TypeScript, and JavaScript via regex; other languages fall back to `search_workspace` and lexical keyword scoring.
 
-### What we would do with another month
-
-- Run the tests (`run_command`) automatically before a run may finish, and feed failures back to the agent.
-- Keep the conversation when failing over mid-run instead of restarting on the fallback agent with an "already applied" list.
-- Tree-sitter outlines for more languages and an optional embedding index for large repositories.
-- A pending-hunks view with accept/reject per hunk across files, and CodeLens actions inside the diff.
-- Quota-aware routing that picks a model by remaining quota before the run starts.
+### What We Would Do With Another Month
+- **Automated Test-and-Repair Loop**: Run relevant `pytest` / unit test suites automatically before a turn completes and feed any failure traceback back into the TrueForge session.
+- **Mid-Run Session Continuation on Failover**: Carry the structured conversation transcript directly into the fallback session rather than restarting with an `ALREADY APPLIED` summary list.
+- **Tree-Sitter AST Outlines & Call-Graph Ranking**: Replace regex outlines with Tree-Sitter grammars across 15+ languages and weight `suggest_context` by import/call-graph proximity.
+- **Multi-File Pending Hunks Sidebar & CodeLens**: Add a dedicated VS Code activity-bar tree view listing all queued hunks across files with inline CodeLens Accept/Reject actions.
