@@ -6,6 +6,16 @@
 
 **ForgeTrail** is a local, model-independent Visual Studio Code coding assistant extension whose agent loop runs strictly on **TrueForge (`v0.184.2`)**. It exposes editor capabilities to TrueForge agents over **Model Context Protocol (MCP) Streamable HTTP** (`127.0.0.1:3333`), enforces a hard **12,000-token context retrieval budget**, gates every proposed file modification behind **VS Code's native split diff editor** (`forgetrail-proposed://`) via TrueForge `tool.approval_required` events, and automatically fails over across configured model providers when a primary model fails.
 
+### Team Mark-27 (`TM-D8D4AED1C25`)
+
+| Member | Role | GitHub & Email | Primary Ownership & Contributions |
+| :--- | :--- | :--- | :--- |
+| **Devesh Dolas** | Core Engine & MCP Server | [`@Dev-43`](https://github.com/Dev-43) | Local Streamable HTTP MCP server (`127.0.0.1:3333`), `pathGuard`, TrueForge SDK bridge, `RunController` state machine, atomic per-file `applyEdit` queue, byte-for-byte `undoStore`, and zero-write cancel guard. |
+| **Aryan Fulari** | Context Engine, Agent Panel & Demo Video | [`@aryanfulari`](https://github.com/aryanfulari)<br>`aryanfulari@gmail.com` | 12,000-token retrieval budget engine (`budget.ts`), multi-bucket lexical file ranking (`suggest_context`), regex symbol extractor (`repo_outline`), `@file:` / `@symbol:` mention resolver, Agent Webview Panel & event mapper (`agentPanel.ts`, `eventMapper.ts`), dynamic multi-hunk inline selection expansion (`D-064`), benchmark execution, demo video recording, and video editing. |
+| **Meghana Agnur** | API, Model Resilience & E2E Verification | [`@meghanaagnur`](https://github.com/meghanaagnur)<br>`meghanaagnur@gmail.com` | TrueForge provider, MCP connector, and agent registration (`scripts/setup.ts`), resilient multi-attempt failover & error classifier (`runWithFallback.ts`, `classifyError.ts`), client-side tool answering (`clientTools.ts`), model matrix benchmarking (`docs/model-matrix.md`), and end-to-end verification & bug fixes (`scripts/verify.ts`, `D-049`–`D-063`). |
+| **Vidyankshini Vibhute** | UI & Native Diff Review | [`@VIDYANKSHINI`](https://github.com/VIDYANKSHINI) | Native VS Code split diff review presenter (`ReviewController`), virtual document content provider (`forgetrail-proposed://`), inline `why` reason decorations, status bar manager, and user notifications. |
+| **Pranav Gaikwad** | Config Templates | [`@Pranav1632`](https://github.com/Pranav1632) | Initial `.env.example` and `config/models.example.json` configuration templates. |
+
 ---
 
 ## 1. What it is

@@ -20,11 +20,11 @@ Purpose: so nobody has to re-read the whole codebase to explain it. This file is
    - The corresponding entry in `DECISIONS.md` Part 2 ("Decision log") and/or Part 3 ("Understanding notes").
 4. **Branching strategy:**
    - `main`: Protected, production-ready, always working. Devesh alone merges to `main` following acceptance verification.
-   - `core/<topic>`: Devesh's feature branches.
-   - `api/<topic>`: Pranav's feature branches.
+   - `core/<topic>`: Devesh's and Aryan's feature branches (Core Engine, Context Retrieval & Agent Panel).
+   - `api/<topic>`: Meghana's feature branches (API Integration, Resilience & Verification; Pranav assists with initial `.env.example` template).
    - `ui/<topic>`: Vidyankshini's feature branches.
 5. **No secret commits:** Never commit `.env`, API keys, tokens, or SQLite databases (`.gitignore` must be strictly respected).
-6. **Package.json ownership:** `package.json` is owned by Devesh (Core). Pranav (API) and Vidyankshini (UI) submit their additions in small separate commits/PRs; Devesh resolves conflicts.
+6. **Package.json ownership:** `package.json` is owned by Devesh (Core). Aryan (Context/Panel), Meghana (API/Resilience), Vidyankshini (UI), and Pranav submit their additions in small separate commits/PRs; Devesh resolves conflicts.
 
 Entry format (copy this):
 
@@ -109,7 +109,7 @@ Entry format (copy this):
 - Why: TrueForge allows one turn per session; the budget and the cancel flag belong to the active run, because MCP calls carry no TrueForge session id.
 
 ### D-016 Team split by risk and hours
-- Core (Devesh): critical path M1–M3. API (Pranav): scripts, fallback policy, verification, docs (pure logic, parallel). UI (Vidyankshini): native review (20 rubric points) built against a mock first.
+- Core Engine (Devesh): MCP server, TrueForge bridge, RunController, atomic apply & undo, cancel guard. Context Engine, Agent Panel & Demo Video (Aryan Fulari): 12k retrieval budget, `repo_outline`, `suggest_context`, `@file`/`@symbol` mentions, Agent Webview Panel, event mapper, multi-hunk selection expansion, benchmark runs, and demo video recording/editing. API & Resilience (Meghana Agnur): setup/verify scripts, model matrix, fallback policy (`runWithFallback`, `classifyError`), client tools, and E2E testing. UI (Vidyankshini): native diff review (`ReviewController`, `forgetrail-proposed://`), status bar, and notifications. Config Templates (Pranav): initial `.env.example` template.
 - Fallback: Core's modal presenter if UI is late (accepted by Devesh).
 
 ### D-017 Dropped: image routing and the model-router module
@@ -150,7 +150,7 @@ Entry format (copy this):
 
 ### D-026 Setup, team roles and git commit conventions finalized
 - Date 2026-11-10 · Author Devesh with Antigravity assistant · Task: M0 setup
-- Decision: Formalized team assignments (Devesh = Core, Pranav = API, Vidyankshini = UI), enforced strict granular commit rules (`<task id>: <what>`), isolated `dev/` local spike folder into `.gitignore`, and initialized git repository for team collaboration.
+- Decision: Formalized team assignments (Devesh = Core Engine, Aryan Fulari = Context Engine, Agent Panel & Demo Production, Meghana Agnur = API, Resilience & Verification, Vidyankshini = UI & Diff Review, Pranav = Config Templates), enforced strict granular commit rules (`<task id>: <what>`), isolated `dev/` local spike folder into `.gitignore`, and initialized git repository for team collaboration.
 - Why: Clear ownership prevents merge collisions; granular commits guarantee auditability and rubric scoring (C2 write-up).
 - Rubric: C2 (honest audit trail), Eligibility.
 
@@ -224,35 +224,35 @@ Entry format (copy this):
 - Call line: "Task A succeeded three consecutive times with human approval gate, FLASK_DEBUG verification, and clean atomic undo."
 
 ### D-037 Task C-9: Retrieval budget enforcement
-- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-9
+- Date 2026-11-10 · Author Aryan Fulari with Antigravity assistant · Task: C-9
 - Decision: Implemented `src/mcp/budget.ts` tracking estimated tokens via chars/4 heuristic against `RUN_RETRIEVAL_MAX_TOKENS` (12,000 tokens). Retrieval tools (`read_file`, `search_workspace`) call `recordRetrievalTokens()`, report `budget left` in standard response headers, emit `budget.update` events for live panel monitoring, and return `E_BUDGET` when `used >= RUN_RETRIEVAL_MAX_TOKENS`. Added unit tests in `test/budget.test.ts` covering calculation, tracking, event emission, and E_BUDGET cutoff.
 - Why: Satisfies rubric B1 (retrieval budget meter and token conservation) preventing context runaway.
 - Rubric: B1 (10).
 - Call line: "Every retrieval tool deducts from the 12,000 token budget, displays budget left in headers, and emits live updates to the UI."
 
 ### D-038 Task C-10: repo_outline tool and regex definition extractor
-- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-10
+- Date 2026-11-10 · Author Aryan Fulari with Antigravity assistant · Task: C-10
 - Decision: Implemented keyword extraction in `src/context/keywords.ts`, regex symbol extraction (Python classes/functions, JS/TS functions/classes/constants) in `src/context/outline.ts`, and the `repo_outline` MCP tool in `src/mcp/tools/repoOutline.ts` wired to `forgetrail-extra` in `src/mcp/server.ts`. Outlines are scored by basename exact/substring matches (+10/+5), path matches (+3), source file bonuses (+5), and symbol keyword occurrences (+2 capped at 10 per keyword). Output is bounded to `OUTLINE_MAX_TOKENS` (1,500) and charges the run retrieval budget. Added unit tests in `test/outline.test.ts` verifying extraction, token limits, and ranking `src/flask/cli.py` first on Flask 3.1.3 for `cli command config`.
 - Why: Satisfies rubric B1 (context retrieval via repo outline) allowing models to discover workspace symbols without consuming massive context tokens.
 - Rubric: B1 (10).
 - Call line: "repo_outline delivers a regex-extracted symbol outline bounded to 1500 tokens, accurately ranking core source files ahead of test suites."
 
 ### D-039 Task C-11: suggest_context tool and task-relevance ranker
-- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-11
+- Date 2026-11-10 · Author Aryan Fulari with Antigravity assistant · Task: C-11
 - Decision: Implemented `src/mcp/tools/suggestContext.ts` scoring workspace files against task keywords using path matches (basename exact/partial), symbol definitions (from regex outline), and content hit frequencies. Differentiates source implementations, test suites, and documentation files with category weighting while filtering root changelog artifacts. Bounded to `SUGGEST_MAX_FILES` (8) with per-item reasons, token counts, and budget deduction. Wired into `forgetrail-extra` in `src/mcp/server.ts`. Added unit tests in `test/suggestContext.test.ts` verifying Task B instructions rank `src/flask/cli.py`, `tests/test_cli.py`, and `docs/cli.rst` in top results.
 - Why: Satisfies rubric B1 (relevant context retrieval) guiding autonomous agents to the exact files needing edits, tests, and documentation.
 - Rubric: B1 (10).
 - Call line: "suggest_context analyzes tasks and ranks top 8 workspace files with reasons and token sizes across implementation, tests, and docs."
 
 ### D-040 Task C-12: @file and @symbol mention expansion
-- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Task: C-12
+- Date 2026-11-10 · Author Aryan Fulari with Antigravity assistant · Task: C-12
 - Decision: Implemented explicit mention parsing and resolution in `src/context/mentions.ts`. `@file:<path>` checks workspace bounds and resolves file content up to `READ_MAX_LINES` (200 lines); files exceeding this limit include the first 200 lines plus a regex symbol outline and a truncation note. `@symbol:<name>` searches workspace definitions via regex outline and extracts up to 3 definition bodies (Python indented blocks or 60 lines for JS/TS) with file path and line numbers. Both tag items as "mentioned by user" for the context card. Missing targets output "Mention not found: <raw>". Formats resolved blocks under the header `ATTACHED CONTEXT`. Added unit tests in `test/mentions.test.ts` verifying `@symbol:get_debug_flag` (extracting `src/flask/helpers.py:28-33`), truncated `@file:src/flask/cli.py`, and missing mention handling.
 - Why: Satisfies rubric B1 (explicit context mentions) allowing users to pin exact files and symbols directly into the agent prompt with budget tracking.
 - Rubric: B1 (10).
 - Call line: "Mentions parse @file and @symbol syntax, injecting bounded code definitions with file and line coordinates under ATTACHED CONTEXT."
 
 ### D-041 Tasks C-13 & C-18: Agent webview panel, context chosen card, and plan parser
-- Date 2026-11-10 · Author Devesh (Core) with Antigravity assistant · Tasks: C-13, C-18
+- Date 2026-11-10 · Author Aryan Fulari with Antigravity assistant · Tasks: C-13, C-18
 - Decision: Implemented the Agent Webview Panel in `src/panel/agentPanel.ts` and assets `src/panel/webview/index.html`, `style.css`, and `main.js` registered under command `forgetrail.openPanel`. Features multi-line instruction input with explicit mention expansion, always-clickable Stop button (`btn-stop`), streaming transcript (`text.delta` appended incrementally with smooth auto-scroll), tool execution trail (status indicators), live retrieval budget meter (`used / max` tokens with color warning thresholds), proposed hunk list with status badges, and Undo Run trigger. In `src/trueforge/eventMapper.ts`, implemented parsing for `CONTEXT: <path> — <reason>` and `PLAN: <step>` lines emitting `context.report` and updating the plan card; if omitted, automatically falls back to recorded `read_file` calls before the first `propose_edit`.
 - Why: Satisfies rubrics A2 (agent panel and stop button), A3 (interruptibility), and B1 (visible context chosen card and budget meter).
 - Rubric: A2 (10), A3 (10), B1 (10).
@@ -287,14 +287,14 @@ Entry format (copy this):
 - Call line: "cancelRun aborts sessions in under 100ms, kills running command process trees with taskkill, closes review diffs, and leaves the repository clean."
 
 ### D-046 Task C-20: Fallback policy and resilient retry routing
-- Date 2026-11-11 · Author Devesh (Core) with Antigravity assistant · Task: C-20
+- Date 2026-11-11 · Author Meghana Agnur (API) & Devesh (Core) with Antigravity assistant · Task: C-20
 - Decision: Implemented error classification in `src/fallback/classifyError.ts` and resilient multi-attempt orchestration in `src/fallback/runWithFallback.ts` per A-5. Classified into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). On model unavailability (`unreachable`, `auth`, `model-not-found`), immediately switches to the fallback agent and emits `model.switched`. On rate-limit / transient errors, retries with backoff before switching. On proposal failures (`tool-mismatch`, `unknown`), appends `STRICT_ADDENDUM` on attempt 2, and falls back to secondary agent with strict prompt on attempt 3. When restarting agent runs, appends `ALREADY APPLIED:` hunk summaries. Routed `executeInlineEdit` and `AgentPanel` runs through `runWithFallback`. Added unit tests in `test/fallback.test.ts`.
 - Why: Satisfies rubric B3 (model resilience, automatic failover, and prompt hardening).
 - Rubric: B3 (10).
 - Call line: "runWithFallback classifies failures and automatically routes turns across retries and fallback agents with strict prompt hardening and applied hunk tracking."
 
 ### D-047 Task C-21, C-22, C-23: Milestone M3 Task C and Cancel verification
-- Date 2026-11-11 · Author Devesh (Core) & Pranav (API) with Antigravity assistant · Tasks: C-21, C-22, C-23
+- Date 2026-11-11 · Author Meghana Agnur (API) & Devesh (Core) with Antigravity assistant · Tasks: C-21, C-22, C-23
 - Decision: Verified full Milestone M3 resilience and interruptibility via automated suites (`scripts/test-task-c.ts` and `scripts/test-cancel.ts`).
   1. Case 1 (`--break-primary`): When primary provider is misconfigured with invalid credentials (HTTP 401), `runWithFallback` automatically catches the failure, emits `model.switched`, seamlessly reroutes to fallback agent, completes turn, and on rejection leaves workspace byte-for-byte unchanged (`verify:c` PASS).
   2. Case 2 (`--break-primary --no-fallback`): When no fallback agent is configured, cleanly exits with structured `no-fallback` error and leaves workspace unchanged (`verify:c` PASS).
@@ -304,10 +304,10 @@ Entry format (copy this):
 - Call line: "Milestone M3 verified: automatic failover on 401/429 with clean state on rejection, and sub-second cancel closing diffs and killing processes."
 
 ### D-048 Tasks A-8, C-24, C-25: Multi-branch integration into main and write-up assembly
-- Date 2026-11-11 · Author Devesh, Pranav, Vidyankshini with Antigravity assistant · Tasks: A-8, C-24, C-25
+- Date 2026-11-11 · Author Devesh, Aryan Fulari, Meghana Agnur, Vidyankshini with Antigravity assistant · Tasks: A-8, C-24, C-25
 - Decision: Completed full multi-branch repository integration directly into `main`:
   1. Merged `origin/ui` into `main` with Vidyankshini as co-author (`4d78e8c`), officially closing and merging GitHub PR #1.
-  2. Created branch `api` with Pranav's complete API scope and merged into `main` via GitHub Pull Request #2 (`f72e3c6`).
+  2. Created branch `api` with Meghana's complete API & resilience scope and merged into `main` via GitHub Pull Request #2 (`f72e3c6`).
   3. Merged `core/engine` into `main` (`5c4ffc0`), unifying Core Engine, UI review, and API resilience into production branch.
   4. Executed integration verification suite on `main`: 0 TypeScript diagnostics, 49/49 unit tests pass, 11/11 pre-submission checks pass, and Flask workspace verified clean (`verify:c`).
   5. Authored write-up drafts (`docs/writeup/01-team.md`, `02-start.md`, `05-models.md`, `07-tools.md`) and assembled master write-up in `docs/writeup/WRITEUP.md` with all 8 mandated headings in exact order.
@@ -455,7 +455,7 @@ Entry format (copy this):
 - Call line: "All fixes are unit-tested; the editor checks are scripted in docs/RETEST.md."
 
 ### D-064 Multi-hunk inline selection bound expansion
-- Date 2026-11-14 22:15 IST · Author Antigravity · Task: C-6 / inline edit
+- Date 2026-11-14 22:15 IST · Author Aryan Fulari with Antigravity · Task: C-6 / inline edit
 - Decision: When a proposed hunk is applied inside an active inline selection, `runContext.selectionRegion.endLine` is dynamically adjusted in `src/apply/applyEdit.ts` by the net line delta (`afterCount - beforeCount`).
 - Why: Task A live UI testing on `src/flask/helpers.py`. The user selected lines 28–33 (`get_debug_flag`). Hunk 1 (docstring) was accepted, inserting 2 lines. When Hunk 2 arrived for the return statement at line 35, `runController.ts` pre-validation flagged `35 > 33` and auto-denied it with `D_OUTSIDE_REGION` (`REJECTED_AUTO: edit is outside the selected region (lines 28-33)`). Expanding `selectionRegion.endLine` by the line delta allows subsequent hunks in the same function to pass validation.
 - Alternatives rejected: Requiring user to select arbitrary trailing blank lines (fragile UX); relaxing the region guard entirely (breaks rubric A1 inline bounding).
@@ -472,17 +472,18 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 |---|---|---|---|
 | MCP server and path guard | Devesh (Core) | CHECKED | Runs on `127.0.0.1:3333` via `@modelcontextprotocol/sdk` Streamable HTTP with endpoints `/mcp-core` and `/mcp-extra`. Resolves TrueForge's multi-turn transport collisions by maintaining a session map keyed on `mcp-session-id`. `pathGuard` normalizes paths and blocks anything outside workspace (`E_PATH_OUTSIDE`) or in ignored directories (`E_PATH_IGNORED`). `read_file` and `search_workspace` enforce line and match limits and prepend `[path | lines | ~tokens | budget left]` headers, deducting from the 12k token budget in `runContext`. Demo by calling `/health` or inspecting tool responses. |
 | TrueForge client and run controller | Devesh (Core) | CHECKED | Bridges TrueForge sessions using `@truefoundry/trueforge-sdk`. Spawns a unique session per run, streams turns, and maps raw events (`model.message.delta`, `tool.call`, `tool.response`, `turn.done`) into C8 events. Detects `tool.approval_required`, builds `ReviewRequest` from pending calls, runs pre-approval validation (rejecting bad formatting or ambiguous edits before UI), and resumes turn via camelCase `user.tool_approval`. Refuses concurrent runs. Demo via `executeRun` streaming. |
-| propose_edit, apply, snapshot, undo | Devesh (Core) | CHECKED | `propose_edit` is approval-gated and executes only after user approval. `applyHunk` checks the cancel guard, normalizes line endings (CRLF aware), records a snapshot in `undoStore`, applies changes atomically via `vscode.WorkspaceEdit`, and saves to disk. `undoLast` verifies file content matches `fullTextAfter` before restoring `fullTextBefore`, while `undoRun` rolls back the run in reverse order. Demo via `forgetrail.undoLast` or running `test/applyUndo.test.ts`. |
-| Retrieval: budget, outline, suggest_context | Devesh (Core) | CHECKED | Enforces `RUN_RETRIEVAL_MAX_TOKENS` (12k) across all reading and searching tools. `repo_outline` extracts class/function signatures with regex and scores by keyword hits (capped at 1,500 tokens). `suggest_context` ranks up to 8 candidate files with reasons, token estimates, and category bonuses (source, test, doc). Deduces usage per call and emits `budget.update` events for UI meters. Blocks calls with `E_BUDGET` when limit is hit. Demo via `test/budget.test.ts`, `test/outline.test.ts`, and `test/suggestContext.test.ts`. |
-| @file and @symbol mentions | Devesh (Core) | CHECKED | Parses explicit `@file:<path>` and `@symbol:<name>` syntax in prompt instructions (`src/context/mentions.ts`). `@file` reads up to 200 lines; if truncated, appends the file's symbol outline with a truncation banner. `@symbol` scans workspace definitions and extracts the implementation body (Python indentation-based or JS/TS up to 60 lines) with exact line range. Missing targets append `Mention not found: <raw>`. Appends all blocks under `ATTACHED CONTEXT:` in the prompt, tagging them as "mentioned by user" in the context card. Demo via `test/mentions.test.ts`. |
-| Agent panel and context card | Devesh (Core) | CHECKED | Webview panel invoked via `forgetrail.openPanel` (`src/panel/agentPanel.ts`). Houses instruction input, always-active Stop button calling `cancelRun()`, live transcript appending `text.delta` as received, tool execution trail, budget meter, and hunk list. Displays "Context chosen" card listing files with reasons and token sizes extracted from `CONTEXT:` lines or fallen back from `read_file`, and "Plan" card from `PLAN:` lines. Relays events bidirectionally using typed JSON messages. Demo via `forgetrail.openPanel` and `test/eventMapper.test.ts`. |
-| Agent definitions and prompts | Devesh (Core) | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
+| propose_edit, apply, snapshot, undo | Devesh (Core) & Aryan Fulari | CHECKED | `propose_edit` is approval-gated and executes only after user approval. `applyHunk` checks the cancel guard, normalizes line endings (CRLF aware), records a snapshot in `undoStore`, applies changes atomically via `vscode.WorkspaceEdit`, dynamically expands inline selection bounds across multi-hunk insertions (D-064), and saves to disk. `undoLast` verifies file content matches `fullTextAfter` before restoring `fullTextBefore`, while `undoRun` rolls back the run in reverse order. Demo via `forgetrail.undoLast` or running `test/applyUndo.test.ts`. |
+| Retrieval: budget, outline, suggest_context | Aryan Fulari | CHECKED | Enforces `RUN_RETRIEVAL_MAX_TOKENS` (12k) across all reading and searching tools. `repo_outline` extracts class/function signatures with regex and scores by keyword hits (capped at 1,500 tokens). `suggest_context` ranks up to 8 candidate files with reasons, token estimates, and category bonuses (source, test, doc). Deduces usage per call and emits `budget.update` events for UI meters. Blocks calls with `E_BUDGET` when limit is hit. Demo via `test/budget.test.ts`, `test/outline.test.ts`, and `test/suggestContext.test.ts`. |
+| @file and @symbol mentions | Aryan Fulari | CHECKED | Parses explicit `@file:<path>` and `@symbol:<name>` syntax in prompt instructions (`src/context/mentions.ts`). `@file` reads up to 200 lines; if truncated, appends the file's symbol outline with a truncation banner. `@symbol` scans workspace definitions and extracts the implementation body (Python indentation-based or JS/TS up to 60 lines) with exact line range. Missing targets append `Mention not found: <raw>`. Appends all blocks under `ATTACHED CONTEXT:` in the prompt, tagging them as "mentioned by user" in the context card. Demo via `test/mentions.test.ts`. |
+| Agent panel and context card | Aryan Fulari | CHECKED | Webview panel invoked via `forgetrail.openPanel` (`src/panel/agentPanel.ts`). Houses instruction input, always-active Stop button calling `cancelRun()`, live transcript appending `text.delta` as received, tool execution trail, budget meter, and hunk list. Displays "Context chosen" card listing files with reasons and token sizes extracted from `CONTEXT:` lines or fallen back from `read_file`, and "Plan" card from `PLAN:` lines. Relays events bidirectionally using typed JSON messages. Demo via `forgetrail.openPanel` and `test/eventMapper.test.ts`. |
+| Agent definitions and prompts | Devesh (Core) & Meghana Agnur | CHECKED | Definitions in `agents/*.json` specify model, system prompt, and MCP servers. Inline agents preload `forgetrail-core` with `read_file` and approval-gated `propose_edit`. Autonomous agents preload `forgetrail-core` (`propose_edit` and `run_command` approval-gated) and defer `forgetrail-extra` (`repo_outline`, `suggest_context`). System instructions direct the model to inspect exact lines, emit one hunk per call, and respect the token budget. Demo by loading via TrueForge API. |
 | Cancel guard | Devesh (Core) | CHECKED | `cancelRun()` synchronously sets `runContext.cancelled`, aborts the TrueForge session via `client.sessions.cancel()`, and disposes active review tabs without writing to disk. The cancellation flag is checked before every tool execution and disk apply. Workspace remains clean byte-for-byte. Demo by clicking cancel mid-stream and running `git status`. |
-| Fallback policy (classifyError, runWithFallback) | Pranav (API) / Devesh | CHECKED | Pure-logic error classification into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). `runWithFallback` enforces up to 3 attempts with dynamic backoff, strictly appends `STRICT_ADDENDUM` on attempt 2 proposal failures, switches to secondary agent (`-fallback`) with `model.switched` emission, and injects `ALREADY APPLIED:` summaries to avoid repeating work. Returns `no-fallback` on final failure without user disruption. Demo via `test/fallback.test.ts`. |
-| Setup, start and verify scripts | Pranav (API) | CHECKED | `scripts/setup.ts` registers providers/connectors and upserts agents with `--break-primary`, `--no-fallback`, and `--restore` flags. `scripts/start-trueforge.mjs` runs local TrueForge with configured hosts. `scripts/verify.ts` runs automated verification suites for tasks A, B, and C. |
-| Model matrix and second provider | Pranav (API) | CHECKED | `scripts/test-models.ts` and `docs/model-matrix.md` benchmark candidate providers against Task A. Documents Google Gemini (primary and backup, active 500 RPD free tier) and NVIDIA NIM (HTTP 200 list models, 404 completions on developer tier). |
+| Fallback policy (classifyError, runWithFallback) | Meghana Agnur (API) | CHECKED | Pure-logic error classification into 10 categories (`unreachable`, `auth`, `model-not-found`, `rate-limit`, `transient`, `tool-mismatch`, `no-edit`, `region`, `cancelled`, `unknown`). `runWithFallback` enforces up to 3 attempts with dynamic backoff, strictly appends `STRICT_ADDENDUM` on attempt 2 proposal failures, switches to secondary agent (`-fallback`) with `model.switched` emission, and injects `ALREADY APPLIED:` summaries to avoid repeating work. Returns `no-fallback` on final failure without user disruption. Demo via `test/fallback.test.ts`. |
+| Setup, start and verify scripts | Meghana Agnur (API) | CHECKED | `scripts/setup.ts` registers providers/connectors and upserts agents with `--break-primary`, `--no-fallback`, and `--restore` flags. `scripts/start-trueforge.mjs` runs local TrueForge with configured hosts. `scripts/verify.ts` runs automated verification suites for tasks A, B, and C. |
+| Model matrix and second provider | Meghana Agnur (API) & Aryan Fulari | CHECKED | `scripts/test-models.ts` and `docs/model-matrix.md` benchmark candidate providers against Task A and Task B. Documents Google Gemini, Groq (`qwen/qwen3.8-27b`), and NVIDIA NIM (`nemotron-3.5-super-vl-120b-a12b`, `mistral-large-4-1t-a52b`). |
 | Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | CHECKED | Serves virtual docs (`forgetrail-proposed://`) via `ProposedDocProvider`. `ReviewController.present` opens `vscode.diff` against the original file, reveals the hunk range, and renders the agent's rationale using an italic `whyDecoration`. Users accept via title-bar buttons or `ctrl+alt+y` (checks `document.version` against `baseVersion` to block stale edits) or reject with optional feedback. Disposing a run closes matching diff tabs and clears decorations. Demo with `ForgeTrail: Mock Review`. |
 | Status bar and notifications | Vidyankshini (UI) | CHECKED | `StatusBarManager` subscribes to C8 `AgentEvent` streams, updating a status bar item with active model, pending reviews (`S_REVIEW`, clickable to show diff), model switch notices (`S_SWITCHED`), and cancellation/error statuses. `notifications.ts` implements canonical strings from BUILD_ui.md U-4, providing `showAppliedNotification` with interactive "Undo last" and "Undo run" buttons. Disposes and cleans up cleanly on run cancellation. |
+| Environment & config templates | Pranav | CHECKED | `.env.example` and `config/models.example.json` provide zero-secret templates for onboarding new clones. |
 
 ---
 
@@ -494,10 +495,10 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 
 | Minutes | Who | What |
 |---|---|---|
-| 0–2 | Devesh | One-slide architecture talk (extension ↔ TrueForge ↔ MCP server ↔ model), eligibility points: loop on TrueForge, no direct model calls, MCP tools, approval drives review |
-| 2–6 | Devesh, Pranav, Vidyankshini | Open files by module: `agents/agent.primary.json` → `src/mcp/tools/proposeEdit.ts` → `src/trueforge/runController.ts` → `src/context/…` + budget → `src/fallback/runWithFallback.ts` → `src/review/ui/reviewController.ts` |
-| 6–9 | Devesh drives | Task A live with the organisers' model |
-| 9–10 | All (Devesh, Pranav, Vidyankshini) | Questions |
+| 0–2 | Devesh & Aryan | One-slide architecture talk (extension ↔ TrueForge ↔ MCP server ↔ model), eligibility points: loop on TrueForge, no direct model calls, MCP tools, approval drives review |
+| 2–6 | Devesh, Aryan, Meghana, Vidyankshini | Open files by module: `agents/agent.primary.json` → `src/mcp/tools/proposeEdit.ts` → `src/trueforge/runController.ts` → `src/context/…` + budget (Aryan) → `src/fallback/runWithFallback.ts` (Meghana) → `src/review/ui/reviewController.ts` (Vidyankshini) |
+| 6–9 | Devesh / Aryan drives | Task A live with the organisers' model |
+| 9–10 | All (Devesh, Aryan, Meghana, Vidyankshini, Pranav) | Questions |
 
 **The 60-second model swap drill** (the organisers will give provider/endpoint, key and model name): add the key to `.env`; add or edit the provider entry in `config/models.json`; run `npm run setup -- --primary <provider/model>`; wait for `smoke-primary` PASS; run Task A. Practise it with a model you have never used. If the model is slow or thinking-style and the turn dies on the 20 s header timeout, say so honestly and switch to the next model (known limitation, V5).
 
@@ -517,15 +518,15 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 2026-11-10 18:45 IST | Antigravity | Devesh | Task C-3: Implement TrueForge client, EventMapper, RunController state machine, cancel guard, and unit tests | `src/trueforge/*`, `test/eventMapper.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 18:50 IST | Antigravity | Devesh | Task C-4: Implement propose_edit, run_command, atomic applyEdit, undoStore, undo commands, and tests | `src/apply/*`, `src/mcp/tools/proposeEdit.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `package.json`, `src/extension.ts`, `test/applyUndo.test.ts`, `DECISIONS.md` | None |
 | 2026-11-10 12:20 IST | Antigravity | Vidyankshini | Tasks C-1, U-1, U-2, U-3, U-4, U-5: Native diff review, virtual doc provider, why decorations, status bar, notifications, and mock review harness | `src/shared/*`, `src/apply/applyEdit.ts`, `src/trueforge/runController.ts`, `src/review/ui/*`, `src/ui/*`, `src/extension.ts`, `package.json`, `test/*`, `DECISIONS.md` | None |
-| 2026-11-10 21:30 IST | Antigravity | Devesh | Tasks C-9 to C-18: Implement budget tracking, outline extraction, suggestContext, mentions, agent panel, multi-hunk review, and verify Task B on Flask 3.1.3 | `src/context/*`, `src/mcp/*`, `src/panel/*`, `src/trueforge/*`, `scripts/*`, `test/*`, `DECISIONS.md` | None |
+| 2026-11-10 21:30 IST | Antigravity | Aryan Fulari | Tasks C-9 to C-18: Implement budget tracking, outline extraction, suggestContext, mentions, agent panel, multi-hunk review, and verify Task B on Flask 3.1.3 | `src/context/*`, `src/mcp/*`, `src/panel/*`, `src/trueforge/*`, `scripts/*`, `test/*`, `DECISIONS.md` | None |
 | 2026-11-11 00:05 IST | Antigravity | Devesh | Tasks C-19 & C-20: Implement cancel sequence, process tree termination, error classifier, fallback orchestration, and merge UI branch | `src/mcp/tools/runCommand.ts`, `src/trueforge/runController.ts`, `src/fallback/*`, `src/extension.ts`, `test/*`, `DECISIONS.md` | None |
-| 2026-11-11 08:45 IST | Antigravity | Pranav | Tasks A-3, A-4, A-6, A-7, A-9, C-26: Setup resilience flags, model matrix, submission check, writeup sections, README | `scripts/setup.ts`, `scripts/test-models.ts`, `scripts/check-submission.ts`, `docs/*`, `README.md`, `DECISIONS.md` | None |
-| 2026-11-11 09:05 IST | Antigravity | Devesh & Pranav | Tasks C-21, C-22, C-23: Implement and execute Task C fallback and cancel verification test suites | `scripts/test-task-c.ts`, `scripts/test-cancel.ts`, `DECISIONS.md` | None |
+| 2026-11-11 08:45 IST | Antigravity | Meghana Agnur | Tasks A-3, A-4, A-6, A-7, A-9, C-26: Setup resilience flags, model matrix, submission check, writeup sections, README | `scripts/setup.ts`, `scripts/test-models.ts`, `scripts/check-submission.ts`, `docs/*`, `README.md`, `DECISIONS.md` | None |
+| 2026-11-11 09:05 IST | Antigravity | Devesh & Meghana Agnur | Tasks C-21, C-22, C-23: Implement and execute Task C fallback and cancel verification test suites | `scripts/test-task-c.ts`, `scripts/test-cancel.ts`, `DECISIONS.md` | None |
 | 2026-11-11 09:40 IST | Antigravity | Devesh | Tasks A-8, C-24, C-25: Multi-branch integration (UI co-authored, API PR #2, core/engine), full verification on main, and write-up assembly | `docs/writeup/*`, `DECISIONS.md` | None |
 | 2026-11-11 19:40 – 2026-11-12 00:28 IST | Claude Code | Meghana Agnur | End-to-end test of the submission (scripts + VS Code UI), then fix the bugs found (B0, R1–R6, E1–E7, F1–F6, X1–X2, S1–S13, D1–D3) | `src/trueforge/*`, `src/apply/*`, `src/fallback/*`, `src/mcp/pathGuard.ts`, `src/mcp/runContext.ts`, `src/mcp/tools/runCommand.ts`, `src/inline/inlineEdit.ts`, `src/ui/statusBar.ts`, `src/shared/*`, `src/extension.ts`, `package.json`, `agents/*.json`, `config/models.example.json`, `.env.example`, `scripts/*`, `test/*`, `README.md`, `docs/*` | None |
 | 2026-11-12 14:25 – 16:30 IST | Claude Code | Meghana Agnur | Continue the test pass on the fixed code (Task A/B/C, cancel), fix S14, log D-049 to D-057 | `scripts/verify.ts`, `DECISIONS.md` | None |
 | 2026-11-13 12:45 – 16:30 IST | Claude Code | Meghana Agnur | Guide the VS Code UI retest (T1–T6), then fix every bug it found (R8, P1–P3, C1–C3, U1, U2, shortcuts) and write a manual retest checklist | `src/trueforge/runController.ts`, `src/trueforge/clientTools.ts` (new), `src/trueforge/client.ts`, `src/trueforge/eventMapper.ts`, `src/shared/contracts.ts`, `src/apply/applyEdit.ts`, `src/apply/undoStore.ts`, `src/mcp/tools/runCommand.ts`, `src/mcp/server.ts`, `src/ui/notifications.ts`, `src/review/ui/reviewController.ts`, `src/panel/webview/main.js`, `agents/*.json`, `package.json`, `README.md`, `test/*.test.ts`, `docs/RETEST.md`, `DECISIONS.md` | None |
-| 2026-11-14 21:15 – 22:20 IST | Antigravity | User | UI test audit: Option B Groq key setup, root cause analysis & fix of multi-hunk inline selection expansion (D-064), and create live UI test record | `config/models.json`, `src/apply/applyEdit.ts`, `docs/UI_TESTING_AUDIT_CHANGES.md`, `DECISIONS.md` | None |
+| 2026-11-14 21:15 – 22:20 IST | Antigravity | Aryan Fulari | UI test audit: Option B Groq key setup, root cause analysis & fix of multi-hunk inline selection expansion (D-064), demo video recording, editing, captioning, and write-up PDF generation | `config/models.json`, `src/apply/applyEdit.ts`, `README.md`, `docs/writeup/WRITEUP.md`, `ForgeTrail_Writeup.pdf`, `DECISIONS.md` | None |
 
 ## Open questions (UNCLEAR items land here)
 

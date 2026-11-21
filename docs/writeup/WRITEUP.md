@@ -7,11 +7,13 @@
 
 ## 1. Team
 
-| Name | Role | GitHub Handle | Primary Responsibilities |
+| Name | Role | GitHub & Email | Primary Responsibilities |
 |---|---|---|---|
-| **Devesh Dolas** | Core Engine | [`@Dev-43`](https://github.com/Dev-43) | MCP HTTP Server (`:3333`), TrueForge client bridge, `RunController` state machine, atomic `applyEdit`, `undoStore`, 12k retrieval budget, Agent Panel webview, and cancel guard. |
-| **Pranav Gaikwad** | API & Verification | [`@Pranav1632`](https://github.com/Pranav1632) | Provider/connector registration (`scripts/setup.ts`), model matrix benchmarking, resilient fallback policy (`runWithFallback`), pre-submission check script, and Flask benchmark verification. |
-| **Vidyankshini Vibhute** | UI & Diff Review | [`@VIDYANKSHINI`](https://github.com/VIDYANKSHINI) | Native VS Code diff review presenter (`ReviewController`), virtual document provider (`forgetrail-proposed://`), inline `why` decorations, status bar manager, and notifications. |
+| **Devesh Dolas** | Core Engine & MCP Server | [`@Dev-43`](https://github.com/Dev-43) | MCP HTTP Server (`:3333`), `pathGuard`, TrueForge SDK session bridge, `RunController` state machine, atomic per-file `applyEdit` queue, byte-for-byte `undoStore`, and zero-write cancel guard. |
+| **Aryan Fulari** | Context Engine, Agent Panel & Demo Production | [`@aryanfulari`](https://github.com/aryanfulari)<br>`aryanfulari@gmail.com` | 12,000-token retrieval budget engine (`src/mcp/budget.ts`), multi-bucket lexical file ranking (`suggest_context`), regex symbol signature extractor (`repo_outline`), `@file:` / `@symbol:` mention resolver (`src/context/*`), Agent Webview Panel & streaming event mapper (`src/panel/*`, `eventMapper.ts`), dynamic multi-hunk inline selection expansion (`D-064`), benchmark execution, demo video recording, and video editing. |
+| **Meghana Agnur** | API, Model Resilience & E2E Verification | [`@meghanaagnur`](https://github.com/meghanaagnur)<br>`meghanaagnur@gmail.com` | TrueForge provider/connector/agent registration (`scripts/setup.ts`), resilient multi-attempt failover & error classifier (`runWithFallback.ts`, `classifyError.ts`), client-side tool answering (`clientTools.ts`), model matrix benchmarking (`docs/model-matrix.md`), and end-to-end verification & bug fixes (`scripts/verify.ts`, `D-049`–`D-063`). |
+| **Vidyankshini Vibhute** | UI & Native Diff Review | [`@VIDYANKSHINI`](https://github.com/VIDYANKSHINI) | Native VS Code diff review presenter (`ReviewController`), virtual document provider (`forgetrail-proposed://`), inline `why` decorations, status bar manager, and notifications. |
+| **Pranav Gaikwad** | Config Templates | [`@Pranav1632`](https://github.com/Pranav1632) | Initial `.env.example` and `config/models.example.json` configuration templates. |
 
 - **Team Name & ID:** Team **Mark-27** (`TM-D8D4AED1C25`)
 - **College / Institution:** Indian Institute of Technology Bombay (IIT Bombay)
