@@ -21,10 +21,10 @@ Purpose: so nobody has to re-read the whole codebase to explain it. This file is
 4. **Branching strategy:**
    - `main`: Protected, production-ready, always working. Devesh alone merges to `main` following acceptance verification.
    - `core/<topic>`: Devesh's and Aryan's feature branches (Core Engine, Context Retrieval & Agent Panel).
-   - `api/<topic>`: Meghana's feature branches (API Integration, Resilience & Verification; Pranav assists with initial `.env.example` template).
+   - `api/<topic>`: Meghana's feature branches (API Integration, Resilience, Debugging & Verification).
    - `ui/<topic>`: Vidyankshini's feature branches.
 5. **No secret commits:** Never commit `.env`, API keys, tokens, or SQLite databases (`.gitignore` must be strictly respected).
-6. **Package.json ownership:** `package.json` is owned by Devesh (Core). Aryan (Context/Panel), Meghana (API/Resilience), Vidyankshini (UI), and Pranav submit their additions in small separate commits/PRs; Devesh resolves conflicts.
+6. **Package.json ownership:** `package.json` is owned by Devesh (Core). Aryan (Context/Panel), Meghana (API/Resilience), and Vidyankshini (UI) submit their additions in small separate commits/PRs; Devesh resolves conflicts.
 
 Entry format (copy this):
 
@@ -109,7 +109,7 @@ Entry format (copy this):
 - Why: TrueForge allows one turn per session; the budget and the cancel flag belong to the active run, because MCP calls carry no TrueForge session id.
 
 ### D-016 Team split by risk and hours
-- Core Engine (Devesh): MCP server, TrueForge bridge, RunController, atomic apply & undo, cancel guard. Context Engine, Agent Panel & Demo Video (Aryan Fulari): 12k retrieval budget, `repo_outline`, `suggest_context`, `@file`/`@symbol` mentions, Agent Webview Panel, event mapper, multi-hunk selection expansion, benchmark runs, and demo video recording/editing. API, Resilience & Overall Debugging (Meghana Agnur): setup/verify scripts, model matrix, fallback policy (`runWithFallback`, `classifyError`), client tools, overall codebase debugging across Core/UI/MCP modules, and E2E testing (`D-049`–`D-063`). UI (Vidyankshini): native diff review (`ReviewController`, `forgetrail-proposed://`), status bar, and notifications. Config Templates (Pranav): initial `.env.example` template.
+- Core Engine (Devesh): MCP server, TrueForge bridge, RunController, atomic apply & undo, cancel guard. Context Engine, Agent Panel & Demo Video (Aryan Fulari): 12k retrieval budget, `repo_outline`, `suggest_context`, `@file`/`@symbol` mentions, Agent Webview Panel, event mapper, multi-hunk selection expansion, benchmark runs, and demo video recording/editing. API, Resilience & Overall Debugging (Meghana Agnur): setup/verify scripts, model matrix, fallback policy (`runWithFallback`, `classifyError`), client tools, overall codebase debugging across Core/UI/MCP modules, and E2E testing (`D-049`–`D-063`). UI (Vidyankshini): native diff review (`ReviewController`, `forgetrail-proposed://`), status bar, and notifications.
 - Fallback: Core's modal presenter if UI is late (accepted by Devesh).
 
 ### D-017 Dropped: image routing and the model-router module
@@ -150,7 +150,7 @@ Entry format (copy this):
 
 ### D-026 Setup, team roles and git commit conventions finalized
 - Date 2026-11-10 · Author Devesh with Antigravity assistant · Task: M0 setup
-- Decision: Formalized team assignments (Devesh = Core Engine, Aryan Fulari = Context Engine, Agent Panel & Demo Production, Meghana Agnur = API, Resilience & Verification, Vidyankshini = UI & Diff Review, Pranav = Config Templates), enforced strict granular commit rules (`<task id>: <what>`), isolated `dev/` local spike folder into `.gitignore`, and initialized git repository for team collaboration.
+- Decision: Formalized team assignments (Devesh = Core Engine, Aryan Fulari = Context Engine, Agent Panel & Demo Production, Meghana Agnur = API, Resilience, Debugging & Verification, Vidyankshini = UI & Diff Review), enforced strict granular commit rules (`<task id>: <what>`), isolated `dev/` local spike folder into `.gitignore`, and initialized git repository for team collaboration.
 - Why: Clear ownership prevents merge collisions; granular commits guarantee auditability and rubric scoring (C2 write-up).
 - Rubric: C2 (honest audit trail), Eligibility.
 
@@ -160,7 +160,7 @@ Entry format (copy this):
 - Rubric: C-0 acceptance, Eligibility.
 
 ### D-028 Task A-1: Environment and model configuration templates
-- Date 2026-11-10 · Author Pranav (API) with Antigravity assistant · Task: A-1
+- Date 2026-11-10 · Author Meghana Agnur (API) with Antigravity assistant · Task: A-1
 - Decision: Created `.env.example` documenting all C2 environment variables and `config/models.example.json` documenting the C3 schema for primary (`google-gemini/gemini-3-1-flash-lite`) and OpenAI-compatible fallback, with zero real API keys committed.
 - Rubric: A-1 acceptance, R6 (no secrets).
 
@@ -483,7 +483,6 @@ Status values: `TO FILL` → `DRAFT` → `CHECKED` (a teammate read it and could
 | Model matrix and second provider | Meghana Agnur (API) & Aryan Fulari | CHECKED | `scripts/test-models.ts` and `docs/model-matrix.md` benchmark candidate providers against Task A and Task B. Documents Google Gemini, Groq (`qwen/qwen3.8-27b`), and NVIDIA NIM (`nemotron-3.5-super-vl-120b-a12b`, `mistral-large-4-1t-a52b`). |
 | Review UI (native diff, why, accept/reject) | Vidyankshini (UI) | CHECKED | Serves virtual docs (`forgetrail-proposed://`) via `ProposedDocProvider`. `ReviewController.present` opens `vscode.diff` against the original file, reveals the hunk range, and renders the agent's rationale using an italic `whyDecoration`. Users accept via title-bar buttons or `ctrl+alt+y` (checks `document.version` against `baseVersion` to block stale edits) or reject with optional feedback. Disposing a run closes matching diff tabs and clears decorations. Demo with `ForgeTrail: Mock Review`. |
 | Status bar and notifications | Vidyankshini (UI) | CHECKED | `StatusBarManager` subscribes to C8 `AgentEvent` streams, updating a status bar item with active model, pending reviews (`S_REVIEW`, clickable to show diff), model switch notices (`S_SWITCHED`), and cancellation/error statuses. `notifications.ts` implements canonical strings from BUILD_ui.md U-4, providing `showAppliedNotification` with interactive "Undo last" and "Undo run" buttons. Disposes and cleans up cleanly on run cancellation. |
-| Environment & config templates | Pranav | CHECKED | `.env.example` and `config/models.example.json` provide zero-secret templates for onboarding new clones. |
 
 ---
 
@@ -498,7 +497,7 @@ Format from the brief: walk through your code, then repeat Task A live with a mo
 | 0–2 | Devesh & Aryan | One-slide architecture talk (extension ↔ TrueForge ↔ MCP server ↔ model), eligibility points: loop on TrueForge, no direct model calls, MCP tools, approval drives review |
 | 2–6 | Devesh, Aryan, Meghana, Vidyankshini | Open files by module: `agents/agent.primary.json` → `src/mcp/tools/proposeEdit.ts` → `src/trueforge/runController.ts` → `src/context/…` + budget (Aryan) → `src/fallback/runWithFallback.ts` (Meghana) → `src/review/ui/reviewController.ts` (Vidyankshini) |
 | 6–9 | Devesh / Aryan drives | Task A live with the organisers' model |
-| 9–10 | All (Devesh, Aryan, Meghana, Vidyankshini, Pranav) | Questions |
+| 9–10 | All (Devesh, Aryan, Meghana, Vidyankshini) | Questions |
 
 **The 60-second model swap drill** (the organisers will give provider/endpoint, key and model name): add the key to `.env`; add or edit the provider entry in `config/models.json`; run `npm run setup -- --primary <provider/model>`; wait for `smoke-primary` PASS; run Task A. Practise it with a model you have never used. If the model is slow or thinking-style and the turn dies on the 20 s header timeout, say so honestly and switch to the next model (known limitation, V5).
 
