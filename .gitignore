@@ -38,6 +38,14 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Media recordings and archives (must not be committed to Git)
+*.mp4
+*.zip
+*.mov
+*.mkv
+*.webm
+vid/
+
 # Editor configurations (preserve shared launch/tasks configs)
 *.swp
 *.swo
